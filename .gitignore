@@ -1,3 +1,5 @@
 # 项目排除路径
 /.gradle/
 /app/build/
+gradle.properties
+.idea
