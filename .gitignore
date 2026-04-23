@@ -3,3 +3,4 @@
 /app/build/
 gradle.properties
 .idea
+release.jks

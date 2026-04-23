@@ -1,48 +1,153 @@
 package com.haostoo.wetypehookr
 
+import android.content.Context
 import android.os.Bundle
+import android.view.HapticFeedbackConstants
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.activity.enableEdgeToEdge
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
+
+import androidx.compose.runtime.*
+import androidx.compose.foundation.layout.*
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.tooling.preview.Preview
-import com.haostoo.wetypehookr.ui.theme.WeTypeHookRTheme
+import androidx.compose.ui.unit.dp
+
+import androidx.compose.material3.*
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.TextField
+import androidx.compose.material3.DropdownMenuItem
 
 class MainActivity : ComponentActivity() {
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
+
         setContent {
-            WeTypeHookRTheme {
-                Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-                    Greeting(
-                        name = "WeTypeHookR",
-                        modifier = Modifier.padding(innerPadding)
-                    )
-                }
+            MaterialTheme {
+                SettingsScreen(this@MainActivity)
             }
         }
     }
 }
 
+///////////////////////////////////////////////////////
+
 @Composable
-fun Greeting(name: String, modifier: Modifier = Modifier) {
-    Text(
-        text = "Hello $name!" +
-                "这里什么也没有因为作者20个小时之前第一次接触Android开发！",
-        modifier = modifier
-    )
+fun SettingsScreen(context: Context) {
+
+    val types = HapticType.values()
+
+    var down by remember {
+        mutableStateOf(
+            HapticConfig.get(
+                context,
+                HapticConfig.KEY_DOWN,
+                HapticFeedbackConstants.KEYBOARD_TAP
+            )
+        )
+    }
+
+    var up by remember {
+        mutableStateOf(
+            HapticConfig.get(
+                context,
+                HapticConfig.KEY_UP,
+                HapticFeedbackConstants.KEYBOARD_TAP
+            )
+        )
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp)
+    ) {
+
+        Text(
+            text = "按下震动",
+            style = MaterialTheme.typography.titleMedium
+        )
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        HapticDropdown(
+            types = types,
+            selected = down,
+            onSelected = {
+                down = it
+                HapticConfig.save(context, HapticConfig.KEY_DOWN, it)
+            }
+        )
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        Text(
+            text = "抬起震动",
+            style = MaterialTheme.typography.titleMedium
+        )
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        HapticDropdown(
+            types = types,
+            selected = up,
+            onSelected = {
+                up = it
+                HapticConfig.save(context, HapticConfig.KEY_UP, it)
+            }
+        )
+    }
 }
 
-@Preview(showBackground = true)
+///////////////////////////////////////////////////////
+// ✅ 通用下拉组件
+///////////////////////////////////////////////////////
+
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun GreetingPreview() {
-    WeTypeHookRTheme {
-        Greeting("Android")
+fun HapticDropdown(
+    types: Array<HapticType>,
+    selected: Int,
+    onSelected: (Int) -> Unit
+) {
+
+    var expanded by remember { mutableStateOf(false) }
+
+    val selectedLabel = types.find { it.value == selected }?.label ?: "未知"
+
+    ExposedDropdownMenuBox(
+        expanded = expanded,
+        onExpandedChange = { expanded = !expanded }
+    ) {
+
+        TextField(
+            value = selectedLabel,
+            onValueChange = {},
+            readOnly = true,
+            label = { Text("选择震动类型") },
+            trailingIcon = {
+                ExposedDropdownMenuDefaults.TrailingIcon(expanded)
+            },
+            modifier = Modifier
+                .menuAnchor()
+                .fillMaxWidth()
+        )
+
+        ExposedDropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false }
+        ) {
+
+            types.forEach { type ->
+
+                DropdownMenuItem(
+                    text = { Text(type.label) },
+                    onClick = {
+                        onSelected(type.value)
+                        expanded = false
+                    }
+                )
+            }
+        }
     }
 }

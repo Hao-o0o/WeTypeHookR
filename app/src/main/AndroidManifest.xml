@@ -9,6 +9,12 @@
             android:label="@string/app_name"
             android:supportsRtl="true"
             android:theme="@style/Theme.WeTypeHookR">
+
+        <provider
+                android:name=".HapticProvider"
+                android:authorities="com.haostoo.wetypehookr.provider"
+                android:exported="true" />
+
         <activity
                 android:name=".MainActivity"
                 android:exported="true"
@@ -16,10 +22,10 @@
                 android:theme="@style/Theme.WeTypeHookR">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
-
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
         </activity>
+
     </application>
 
 </manifest>
