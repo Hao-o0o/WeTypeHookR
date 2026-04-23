@@ -1,15 +1,17 @@
 package com.haostoo.wetypehookr
 
+import android.content.Context
+import android.os.VibrationEffect
+import android.os.Vibrator
 import android.util.Log
 import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
 import android.view.View
 import android.widget.Toast
-
-import io.github.libxposed.api.XposedModule
-import io.github.libxposed.api.XposedModuleInterface
 import io.github.libxposed.api.XposedInterface
 import io.github.libxposed.api.XposedInterface.HookHandle
+import io.github.libxposed.api.XposedModule
+import io.github.libxposed.api.XposedModuleInterface
 
 class MainModule : XposedModule() {
 
@@ -20,8 +22,6 @@ class MainModule : XposedModule() {
         @Volatile
         private var realHookInstalled = false
 
-        @Volatile
-        private var toastShown = false
     }
 
     override fun onPackageLoaded(
@@ -105,10 +105,7 @@ class MainModule : XposedModule() {
 
     class ImeRootViewHooker : XposedInterface.Hooker {
 
-        // ⭐ 缓存变量（只读取一次）
-        private var downType: Int = HapticType.KEYBOARD.value
-        private var upType: Int = HapticType.KEYBOARD.value
-
+        private var config: HapticFullConfig? = null
         private var initialized = false
 
         override fun intercept(chain: XposedInterface.Chain): Any? {
@@ -121,80 +118,138 @@ class MainModule : XposedModule() {
 
             val context = view.context
 
-            // ⭐ 只在第一次调用时初始化
+            // ⭐ 只初始化一次
             if (!initialized) {
 
-                val (down, up) = HapticProviderClient.get(context)
-
-                downType = down
-                upType = up
-
+                config = HapticProviderClient.getFull(context)
                 initialized = true
+
+                val cfg = config!!
 
                 view.post {
 
+                    val msg = buildString {
+
+                        append("DOWN:")
+                        append(
+                            if (cfg.downMode == 0)
+                                typeName(cfg.downType)
+                            else
+                                "${cfg.downDuration}ms ${cfg.downStrength}"
+                        )
+
+                        append("\nUP:")
+                        append(
+                            if (cfg.upMode == 0)
+                                typeName(cfg.upType)
+                            else
+                                "${cfg.upDuration}ms ${cfg.upStrength}"
+                        )
+                    }
+
                     Toast.makeText(
                         context,
-                        "UP:${typeName(upType)}\nDOWN:${typeName(downType)}",
-                        Toast.LENGTH_SHORT
+                        msg,
+                        Toast.LENGTH_LONG
                     ).show()
                 }
             }
 
-            fun perform(type: Int) {
-
-                if (type == HapticType.NONE.value) return
-
-                val realType = when (type) {
-
-                    HapticType.KEYBOARD.value ->
-                        HapticFeedbackConstants.KEYBOARD_TAP
-
-                    HapticType.VIRTUAL_KEY.value ->
-                        HapticFeedbackConstants.VIRTUAL_KEY
-
-                    HapticType.VIRTUAL_KEY_RELEASE.value ->
-                        HapticFeedbackConstants.VIRTUAL_KEY_RELEASE
-
-                    HapticType.LONG_PRESS.value ->
-                        HapticFeedbackConstants.LONG_PRESS
-
-                    HapticType.CLOCK.value ->
-                        HapticFeedbackConstants.CLOCK_TICK
-
-                    HapticType.CONTEXT.value ->
-                        HapticFeedbackConstants.CONTEXT_CLICK
-
-                    else ->
-                        HapticFeedbackConstants.KEYBOARD_TAP
-                }
-
-                val ok = view.performHapticFeedback(realType)
-
-                if (!ok) {
-                    view.performHapticFeedback(
-                        HapticFeedbackConstants.KEYBOARD_TAP
-                    )
-                }
-            }
+            val cfg = config ?: return chain.proceed()
 
             when (event.actionMasked) {
 
                 MotionEvent.ACTION_DOWN,
                 MotionEvent.ACTION_POINTER_DOWN -> {
-                    perform(downType)
+
+                    if (cfg.downMode == 0) {
+                        performSystem(view, cfg.downType)
+                    } else {
+                        vibrate(context, cfg.downDuration, cfg.downStrength)
+                    }
                 }
 
                 MotionEvent.ACTION_UP,
                 MotionEvent.ACTION_POINTER_UP -> {
-                    perform(upType)
+
+                    if (cfg.upMode == 0) {
+                        performSystem(view, cfg.upType)
+                    } else {
+                        vibrate(context, cfg.upDuration, cfg.upStrength)
+                    }
                 }
             }
 
             return chain.proceed()
         }
 
-        // ⭐ 用于显示名字（可选）
+        // ================= 系统震动 =================
+        private fun performSystem(view: View, type: Int) {
+
+            if (type == HapticType.NONE.value) return
+
+            val real = when (type) {
+
+                HapticType.KEYBOARD.value ->
+                    HapticFeedbackConstants.KEYBOARD_TAP
+
+                HapticType.VIRTUAL_KEY.value ->
+                    HapticFeedbackConstants.VIRTUAL_KEY
+
+                HapticType.VIRTUAL_KEY_RELEASE.value ->
+                    HapticFeedbackConstants.VIRTUAL_KEY_RELEASE
+
+                HapticType.LONG_PRESS.value ->
+                    HapticFeedbackConstants.LONG_PRESS
+
+                HapticType.CLOCK.value ->
+                    HapticFeedbackConstants.CLOCK_TICK
+
+                HapticType.CONTEXT.value ->
+                    HapticFeedbackConstants.CONTEXT_CLICK
+
+                else ->
+                    HapticFeedbackConstants.KEYBOARD_TAP
+            }
+
+            val ok = view.performHapticFeedback(real)
+
+            if (!ok) {
+                view.performHapticFeedback(
+                    HapticFeedbackConstants.KEYBOARD_TAP
+                )
+            }
+        }
+
+        // ================= 自定义震动 =================
+        private fun vibrate(
+            context: Context,
+            duration: Long,
+            strength: Int
+        ) {
+
+            try {
+
+                val vibrator =
+                    context.getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
+
+                if (!vibrator.hasVibrator()) return
+
+                val amplitude = strength.coerceIn(1, 255)
+
+                if (android.os.Build.VERSION.SDK_INT >= 26) {
+                    vibrator.vibrate(
+                        VibrationEffect.createOneShot(duration, amplitude)
+                    )
+                } else {
+                    vibrator.vibrate(duration)
+                }
+
+            } catch (_: Throwable) {
+            }
+        }
+
+        // ================= 名称映射 =================
         private fun typeName(type: Int): String {
             return when (type) {
                 HapticType.KEYBOARD.value -> "KEYBOARD"
