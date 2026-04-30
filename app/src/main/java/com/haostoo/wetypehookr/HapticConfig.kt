@@ -1,90 +1,57 @@
 package com.haostoo.wetypehookr
 
 import android.content.Context
-import android.os.Environment
-import android.util.Log
-import java.io.File
+import android.content.SharedPreferences
+import android.view.HapticFeedbackConstants
 
 object HapticConfig {
 
-    private const val TAG = "HAPTIC_SAVE"
+    private const val SP_NAME = "haptic_config"
 
-    private const val MODULE_PKG = "com.haostoo.wetypehookr"
-    private const val FILE_NAME = "haptic_config.txt"
+    const val KEY_DOWN = "down"
+    const val KEY_UP = "up"
 
-    const val KEY_DOWN = "down_type"
-    const val KEY_UP = "up_type"
-
-    private fun getFile(): File {
-
-        val base = Environment.getExternalStorageDirectory().absolutePath
-        val dirPath = "$base/Android/data/$MODULE_PKG"
-
-        val dir = File(dirPath)
-
-        // ✅ 强制创建目录（关键）
-        if (!dir.exists()) {
-            val ok = dir.mkdirs()
-            Log.e(TAG, "mkdirs result=$ok path=$dirPath")
-        }
-
-        return File(dir, FILE_NAME)
+    private fun sp(context: Context): SharedPreferences {
+        return context.getSharedPreferences(SP_NAME, Context.MODE_PRIVATE)
     }
 
-    fun save(context: Context, key: String, value: Int) {
-
-        try {
-
-            val file = getFile()
-
-            val map = mutableMapOf<String, Int>()
-
-            // 读取旧数据
-            if (file.exists()) {
-                file.readLines().forEach {
-                    val parts = it.split("=")
-                    if (parts.size == 2) {
-                        map[parts[0]] = parts[1].toIntOrNull() ?: 0
-                    }
-                }
-            }
-
-            // 写入新值
-            map[key] = value
-
-            file.writeText(
-                map.entries.joinToString("\n") {
-                    "${it.key}=${it.value}"
-                }
-            )
-
-            Log.e(TAG, "saved OK -> ${file.absolutePath}")
-
-        } catch (t: Throwable) {
-            Log.e(TAG, "write failed=$t")
-        }
-    }
-
+    // ================== Int get ==================
     fun get(context: Context, key: String, def: Int): Int {
+        return sp(context).getInt(key, def)
+    }
 
-        return try {
+    // ================== Int save ==================
+    fun save(context: Context, key: String, value: Int) {
+        sp(context).edit().putInt(key, value).apply()
+    }
 
-            val file = getFile()
+    // ================== Hook侧“只读一次快照” ==================
+    data class Snapshot(
+        val downMode: Int,
+        val upMode: Int,
+        val downType: Int,
+        val upType: Int,
+        val downDuration: Long,
+        val upDuration: Long,
+        val downStrength: Int,
+        val upStrength: Int
+    )
 
-            if (!file.exists()) return def
+    fun loadSnapshot(context: Context): Snapshot {
+        val sp = sp(context)
 
-            file.readLines().forEach {
-                val parts = it.split("=")
-                if (parts.size == 2 && parts[0] == key) {
-                    return parts[1].toIntOrNull() ?: def
-                }
-            }
+        return Snapshot(
+            downMode = sp.getInt("down_mode", 0),
+            upMode = sp.getInt("up_mode", 0),
 
-            def
+            downType = sp.getInt(KEY_DOWN, HapticFeedbackConstants.KEYBOARD_TAP),
+            upType = sp.getInt(KEY_UP, HapticFeedbackConstants.KEYBOARD_TAP),
 
-        } catch (t: Throwable) {
-            Log.e(TAG, "read failed=$t")
-            def
-        }
+            downDuration = sp.getInt("down_duration", 10).toLong(),
+            upDuration = sp.getInt("up_duration", 5).toLong(),
+
+            downStrength = sp.getInt("down_strength", 80),
+            upStrength = sp.getInt("up_strength", 40)
+        )
     }
 }

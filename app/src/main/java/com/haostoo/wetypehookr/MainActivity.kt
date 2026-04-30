@@ -8,6 +8,7 @@ import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 
@@ -39,18 +40,20 @@ fun SettingsScreen(context: Context) {
 
     val types = HapticType.values()
 
-    // ⭐ 模式（分离）
-    var downMode by remember {
-        mutableStateOf(HapticConfig.get(context, "down_mode", 0))
+    // ========================
+    // ⭐ 使用 Saveable（解决切后台恢复默认值）
+    // ========================
+
+    var downMode by rememberSaveable {
+        mutableIntStateOf(HapticConfig.get(context, "down_mode", 0))
     }
 
-    var upMode by remember {
-        mutableStateOf(HapticConfig.get(context, "up_mode", 0))
+    var upMode by rememberSaveable {
+        mutableIntStateOf(HapticConfig.get(context, "up_mode", 0))
     }
 
-    // ⭐ 系统震动
-    var down by remember {
-        mutableStateOf(
+    var down by rememberSaveable {
+        mutableIntStateOf(
             HapticConfig.get(
                 context,
                 HapticConfig.KEY_DOWN,
@@ -59,8 +62,8 @@ fun SettingsScreen(context: Context) {
         )
     }
 
-    var up by remember {
-        mutableStateOf(
+    var up by rememberSaveable {
+        mutableIntStateOf(
             HapticConfig.get(
                 context,
                 HapticConfig.KEY_UP,
@@ -69,24 +72,25 @@ fun SettingsScreen(context: Context) {
         )
     }
 
-    // ⭐ 自定义参数
-    var downDuration by remember {
-        mutableStateOf(HapticConfig.get(context, "down_duration", 10))
+    var downDuration by rememberSaveable {
+        mutableIntStateOf(HapticConfig.get(context, "down_duration", 10))
     }
 
-    var downStrength by remember {
-        mutableStateOf(HapticConfig.get(context, "down_strength", 80))
+    var downStrength by rememberSaveable {
+        mutableIntStateOf(HapticConfig.get(context, "down_strength", 80))
     }
 
-    var upDuration by remember {
-        mutableStateOf(HapticConfig.get(context, "up_duration", 5))
+    var upDuration by rememberSaveable {
+        mutableIntStateOf(HapticConfig.get(context, "up_duration", 5))
     }
 
-    var upStrength by remember {
-        mutableStateOf(HapticConfig.get(context, "up_strength", 40))
+    var upStrength by rememberSaveable {
+        mutableIntStateOf(HapticConfig.get(context, "up_strength", 40))
     }
 
-    // ⭐ 弹窗控制
+    // ========================
+    // dialog state
+    // ========================
     var showDialog by remember { mutableStateOf(false) }
     var isDownConfig by remember { mutableStateOf(true) }
 
@@ -114,6 +118,7 @@ fun SettingsScreen(context: Context) {
                 } else {
                     down = it
                     downMode = 0
+
                     HapticConfig.save(context, HapticConfig.KEY_DOWN, it)
                     HapticConfig.save(context, "down_mode", 0)
                 }
@@ -130,7 +135,7 @@ fun SettingsScreen(context: Context) {
         HapticDropdown(
             types = types,
             selected = if (upMode == 0) up else -1,
-            customLabel = if (upMode == 1) "${upDuration}ms / ${upStrength}" else null,
+            customLabel = if (upMode == 1) "${upDuration}ms / $upStrength" else null,
             onSelected = {
 
                 if (it == -1) {
@@ -140,6 +145,7 @@ fun SettingsScreen(context: Context) {
                 } else {
                     up = it
                     upMode = 0
+
                     HapticConfig.save(context, HapticConfig.KEY_UP, it)
                     HapticConfig.save(context, "up_mode", 0)
                 }
@@ -180,8 +186,9 @@ fun SettingsScreen(context: Context) {
         )
     }
 }
+
 ///////////////////////////////////////////////////////
-// ✅ 通用下拉组件
+// Dropdown（保持原样）
 ///////////////////////////////////////////////////////
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -195,14 +202,8 @@ fun HapticDropdown(
 
     var expanded by remember { mutableStateOf(false) }
 
-    // ⭐ 当前显示文本
     val selectedLabel = when (selected) {
-        -1 -> {
-            if (customLabel != null)
-                "自定义（$customLabel）"
-            else
-                "自定义"
-        }
+        -1 -> if (customLabel != null) "自定义（$customLabel）" else "自定义"
         else -> types.find { it.value == selected }?.label ?: "未知"
     }
 
@@ -229,9 +230,7 @@ fun HapticDropdown(
             onDismissRequest = { expanded = false }
         ) {
 
-            // ⭐ 系统震动列表
             types.forEach { type ->
-
                 DropdownMenuItem(
                     text = { Text(type.label) },
                     onClick = {
@@ -241,27 +240,25 @@ fun HapticDropdown(
                 )
             }
 
-            // ⭐ 分割（可选，让UI更清晰）
             HorizontalDivider()
 
-            // ⭐ 自定义选项（带参数展示）
             DropdownMenuItem(
                 text = {
-                    Text(
-                        if (customLabel != null)
-                            "自定义（$customLabel）"
-                        else
-                            "自定义"
-                    )
+                    Text(if (customLabel != null) "自定义（$customLabel）" else "自定义")
                 },
                 onClick = {
-                    onSelected(-1) // ⭐ -1 代表自定义
+                    onSelected(-1)
                     expanded = false
                 }
             )
         }
     }
 }
+
+///////////////////////////////////////////////////////
+// Dialog（不变）
+///////////////////////////////////////////////////////
+
 @Composable
 fun CustomHapticDialog(
     onConfirm: (Int, Int) -> Unit,
@@ -282,48 +279,30 @@ fun CustomHapticDialog(
     AlertDialog(
         onDismissRequest = onDismiss,
 
-        title = {
-            Text("自定义震动")
-        },
+        title = { Text("自定义震动") },
 
         text = {
 
             Column {
 
-                // ===== 时长 =====
-                Text("时长 (ms)", style = MaterialTheme.typography.labelMedium)
-
+                Text("时长 (ms)")
                 TextField(
                     value = durationText,
-                    onValueChange = {
-                        durationText = it.filter { c -> c.isDigit() }
-                    },
-                    singleLine = true,
-                    placeholder = { Text("1 - 100") }
+                    onValueChange = { durationText = it.filter(Char::isDigit) }
                 )
 
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(Modifier.height(12.dp))
 
-                // ===== 强度 =====
-                Text("强度 (1-255)", style = MaterialTheme.typography.labelMedium)
-
+                Text("强度 (1-255)")
                 TextField(
                     value = strengthText,
-                    onValueChange = {
-                        strengthText = it.filter { c -> c.isDigit() }
-                    },
-                    singleLine = true,
-                    placeholder = { Text("1 - 255") }
+                    onValueChange = { strengthText = it.filter(Char::isDigit) }
                 )
 
-                Spacer(modifier = Modifier.height(8.dp))
-
-                // ===== 错误提示 =====
                 if (!isValid) {
                     Text(
-                        text = "请输入有效范围：时长1-100ms，强度1-255",
-                        color = MaterialTheme.colorScheme.error,
-                        style = MaterialTheme.typography.bodySmall
+                        "范围错误",
+                        color = MaterialTheme.colorScheme.error
                     )
                 }
             }
@@ -331,9 +310,7 @@ fun CustomHapticDialog(
 
         confirmButton = {
             Button(
-                onClick = {
-                    onConfirm(duration!!, strength!!)
-                },
+                onClick = { onConfirm(duration!!, strength!!) },
                 enabled = isValid
             ) {
                 Text("确定")
