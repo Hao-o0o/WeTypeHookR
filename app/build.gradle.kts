@@ -38,8 +38,8 @@ android {
         applicationId = "com.haostoo.wetypehookr"
         minSdk = 30
         targetSdk = 35
-        versionCode = 1172
-        versionName = "1.1.7"
+        versionCode = 1202
+        versionName = "1.2.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -86,6 +86,7 @@ dependencies {
     implementation("top.yukonga.miuix.kmp:miuix-icons-android:0.9.0")
     implementation("androidx.navigation:navigation-compose:2.9.8")
     implementation("androidx.navigationevent:navigationevent-compose:1.1.0")
+    implementation("io.coil-kt:coil-compose:2.6.0")
 }
 java {
     toolchain {
