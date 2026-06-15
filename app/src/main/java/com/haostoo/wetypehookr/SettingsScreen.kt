@@ -119,53 +119,59 @@ fun SettingsScreen(
                 }
             )
             var view = LocalView.current
-            OverlayDropdownPreference(
-                title = "按下系统震动风格",
-                items = systemHaptics,
-                selectedIndex = state.downSystemIndex,
-                onSelectedIndexChange = { index ->
-                    onStateChange(state.copy(downSystemIndex = index))
+            if (state.downIndex == 1 ) run {
+                OverlayDropdownPreference(
+                    title = "按下系统震动风格",
+                    items = systemHaptics,
+                    selectedIndex = state.downSystemIndex,
+                    onSelectedIndexChange = { index ->
+                        onStateChange(state.copy(downSystemIndex = index))
 
-                    // 👇 只有在“系统预设模式”下才触发预览震动
-                    if (state.downIndex == 1) {
-                        view.performHapticFeedback(hapticConstantForIndex(index))
-                    }
-                },
-                enabled = state.downIndex == 1 // 👈 系统预设模式
+                        // 👇 只有在“系统预设模式”下才触发预览震动
+                        if (state.downIndex == 1) {
+                            view.performHapticFeedback(hapticConstantForIndex(index))
+                        }
+                    },
+                    //enabled = state.downIndex == 1 // 👈 系统预设模式
+                )
+            }
+            if (state.downIndex == 2 ) run{
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(
+                        "按下震动时长：${state.downDuration.toInt()} ms",
+                        color = if (state.downIndex == 2) Color.Unspecified else Color.LightGray
+                    )
+
+                    Slider(
+                        value = state.downDuration,
+                        onValueChange = {
+                            onStateChange(state.copy(downDuration = it))
+                        },
+                        valueRange = 10f..200f,
+                        //enabled = state.downIndex == 2
+                    )
+                }
+
+                Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+                    Text(
+                        "按下震动强度：${(state.downStrength * 100).toInt()} %",
+                        color = if (state.downIndex == 2) Color.Unspecified else Color.LightGray
+                    )
+
+                    Slider(
+                        value = state.downStrength,
+                        onValueChange = {
+                            onStateChange(state.copy(downStrength = it))
+                        },
+                        valueRange = 0f..1f,
+                        //enabled = state.downIndex == 2
+                    )
+                }
+            }
+
+            HorizontalDivider(
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 16.dp)
             )
-            Column(modifier = Modifier.padding(16.dp)) {
-                Text(
-                    "按下震动时长：${state.downDuration.toInt()} ms",
-                    color = if (state.downIndex == 2) Color.Unspecified else Color.LightGray
-                )
-
-                Slider(
-                    value = state.downDuration,
-                    onValueChange = {
-                        onStateChange(state.copy(downDuration = it))
-                    },
-                    valueRange = 10f..200f,
-                    enabled = state.downIndex == 2
-                )
-            }
-
-            Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
-                Text(
-                    "按下震动强度：${(state.downStrength * 100).toInt()} %",
-                    color = if (state.downIndex == 2) Color.Unspecified else Color.LightGray
-                )
-
-                Slider(
-                    value = state.downStrength,
-                    onValueChange = {
-                        onStateChange(state.copy(downStrength = it))
-                    },
-                    valueRange = 0f..1f,
-                    enabled = state.downIndex == 2
-                )
-            }
-
-            HorizontalDivider()
 
             // ===== 抬起震动 =====
             OverlayDropdownPreference(
@@ -177,50 +183,54 @@ fun SettingsScreen(
                 }
             )
             view = LocalView.current
-            OverlayDropdownPreference(
-                title = "抬起系统震动风格",
-                items = systemHaptics,
-                selectedIndex = state.upSystemIndex,
-                onSelectedIndexChange = { index ->
-                    onStateChange(state.copy(upSystemIndex = index))
+            if (state.upIndex == 1 ) run{
+                OverlayDropdownPreference(
+                    title = "抬起系统震动风格",
+                    items = systemHaptics,
+                    selectedIndex = state.upSystemIndex,
+                    onSelectedIndexChange = { index ->
+                        onStateChange(state.copy(upSystemIndex = index))
 
-                    // 👇 只有在“系统预设模式”下才触发预览震动
-                    if (state.upIndex == 1) {
-                        view.performHapticFeedback(hapticConstantForIndex(index))
-                    }
-                },
-                enabled = state.upIndex == 1
-            )
-            Column(modifier = Modifier.padding(16.dp)) {
-                Text(
-                    "抬起震动时长：${state.upDuration.toInt()} ms",
-                    color = if (state.upIndex == 2) Color.Unspecified else Color.LightGray
-                )
-
-                Slider(
-                    value = state.upDuration,
-                    onValueChange = {
-                        onStateChange(state.copy(upDuration = it))
+                        // 👇 只有在“系统预设模式”下才触发预览震动
+                        if (state.upIndex == 1) {
+                            view.performHapticFeedback(hapticConstantForIndex(index))
+                        }
                     },
-                    valueRange = 10f..200f,
-                    enabled = state.upIndex == 2
+                    //enabled = state.upIndex == 1
                 )
             }
+            if (state.upIndex == 2 ) run{
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(
+                        "抬起震动时长：${state.upDuration.toInt()} ms",
+                        color = if (state.upIndex == 2) Color.Unspecified else Color.LightGray
+                    )
 
-            Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
-                Text(
-                    "抬起震动强度：${(state.upStrength * 100).toInt()} %",
-                    color = if (state.upIndex == 2) Color.Unspecified else Color.LightGray
-                )
+                    Slider(
+                        value = state.upDuration,
+                        onValueChange = {
+                            onStateChange(state.copy(upDuration = it))
+                        },
+                        valueRange = 10f..200f,
+                        enabled = state.upIndex == 2
+                    )
+                }
 
-                Slider(
-                    value = state.upStrength,
-                    onValueChange = {
-                        onStateChange(state.copy(upStrength = it))
-                    },
-                    valueRange = 0f..1f,
-                    enabled = state.upIndex == 2
-                )
+                Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+                    Text(
+                        "抬起震动强度：${(state.upStrength * 100).toInt()} %",
+                        color = if (state.upIndex == 2) Color.Unspecified else Color.LightGray
+                    )
+
+                    Slider(
+                        value = state.upStrength,
+                        onValueChange = {
+                            onStateChange(state.copy(upStrength = it))
+                        },
+                        valueRange = 0f..1f,
+                        enabled = state.upIndex == 2
+                    )
+                }
             }
         }
 
