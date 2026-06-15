@@ -19,6 +19,45 @@ import kotlin.jvm.java
 class MainModule : XposedModule() {
 
     companion object {
+        //custom wave
+        data class WaveformHaptic(
+            val timings: LongArray,
+            val amplitudes: IntArray
+        )
+
+        data class CustomHapticConfig(
+            val down: WaveformHaptic?,
+            val up: WaveformHaptic?
+        )
+
+        @Volatile var cachedCustomHaptic: CustomHapticConfig? = null
+
+        private fun readCustomHaptic(packageName: String): CustomHapticConfig? {
+            val file = File(
+                "/storage/emulated/0/Android/data/$packageName/files/haostoo/config/customhaptic.json"
+            )
+            if (!file.exists()) return null
+
+            return try {
+                val json = org.json.JSONObject(file.readText())
+                fun parseWaveform(key: String): WaveformHaptic? {
+                    val obj = json.optJSONObject(key) ?: return null
+                    val tArr = obj.optJSONArray("timings") ?: return null
+                    val aArr = obj.optJSONArray("amplitudes") ?: return null
+                    if (tArr.length() != aArr.length()) return null
+                    val timings = LongArray(tArr.length()) { tArr.getLong(it) }
+                    val amplitudes = IntArray(aArr.length()) { aArr.getInt(it) }
+                    return WaveformHaptic(timings, amplitudes)
+                }
+                CustomHapticConfig(
+                    down = parseWaveform("down"),
+                    up = parseWaveform("up")
+                )
+            } catch (e: Exception) {
+                Log.e(TAG, "customhaptic.json parse failed", e)
+                null
+            }
+        }
 
         fun killWeTypeHld(context: android.content.Context, onResult: (String) -> Unit) {
             kotlinx.coroutines.MainScope().launch {
@@ -116,6 +155,7 @@ class MainModule : XposedModule() {
 
         try {
             cachedSettings = readConfigDirect(param.packageName)
+            cachedCustomHaptic = readCustomHaptic(param.packageName)
         } catch (e: Exception) {
             Log.e(TAG, "Config load failed", e)
         }
@@ -266,13 +306,21 @@ class MainModule : XposedModule() {
                     vibrator.vibrate(duration)
                 }
             }
-
+            fun vibrateWaveform(timings: LongArray, amplitudes: IntArray) {
+                if (!vibrator.hasVibrator()) return
+                if (android.os.Build.VERSION.SDK_INT >= 26) {
+                    vibrator.vibrate(
+                        android.os.VibrationEffect.createWaveform(timings, amplitudes, -1)
+                    )
+                }
+            }
             when (event.actionMasked) {
 
                 MotionEvent.ACTION_DOWN -> {
                     when (config.downIndex) {
                         1 -> view.performHapticFeedback(hapticConstantForIndex(config.downSystemIndex))
                         2 -> vibrateCompat(config.downDuration.toLong(), config.downStrength)
+                        3 -> cachedCustomHaptic?.down?.let { vibrateWaveform(it.timings, it.amplitudes) }
                     }
 
                     return chain.proceed()
@@ -282,6 +330,7 @@ class MainModule : XposedModule() {
                     when (config.upIndex) {
                         1 -> view.performHapticFeedback(hapticConstantForIndex(config.upSystemIndex))
                         2 -> vibrateCompat(config.upDuration.toLong(), config.upStrength)
+                        3 -> cachedCustomHaptic?.up?.let { vibrateWaveform(it.timings, it.amplitudes) }
                     }
 
                     return chain.proceed()
@@ -291,6 +340,7 @@ class MainModule : XposedModule() {
                     when (config.downIndex) {
                         1 -> view.performHapticFeedback(hapticConstantForIndex(config.downSystemIndex))
                         2 -> vibrateCompat(config.downDuration.toLong(), config.downStrength)
+                        3 -> cachedCustomHaptic?.down?.let { vibrateWaveform(it.timings, it.amplitudes) }
                     }
                     return chain.proceed()
                 }
@@ -299,6 +349,7 @@ class MainModule : XposedModule() {
                     when (config.upIndex) {
                         1 -> view.performHapticFeedback(hapticConstantForIndex(config.upSystemIndex))
                         2 -> vibrateCompat(config.upDuration.toLong(), config.upStrength)
+                        3 -> cachedCustomHaptic?.up?.let { vibrateWaveform(it.timings, it.amplitudes) }
                     }
                     return chain.proceed()
                 }

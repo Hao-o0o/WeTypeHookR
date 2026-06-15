@@ -1,5 +1,6 @@
 package com.haostoo.wetypehookr
 
+import android.view.View
 import android.widget.Toast
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -15,6 +16,7 @@ import androidx.compose.ui.unit.sp
 import androidx.core.net.toUri
 import com.haostoo.wetypehookr.MainModule.Companion.killDoubaoHld
 import com.haostoo.wetypehookr.MainModule.Companion.killWeTypeHld
+import org.json.JSONObject
 import top.yukonga.miuix.kmp.basic.*
 import top.yukonga.miuix.kmp.overlay.OverlayDialog
 import top.yukonga.miuix.kmp.preference.ArrowPreference
@@ -41,7 +43,80 @@ fun SettingsScreen(
     val isDoubaoIme = remember {
         context.packageName == "com.bytedance.android.doubaoime"
     }
-    val options = listOf("无震动", "系统预设风格", "自定义")
+
+    fun loadCustomHapticPreview(context: android.content.Context): Pair<String, String> {
+        val path = "/storage/emulated/0/Android/data/${context.packageName}/files/haostoo/config/customhaptic.json"
+        val file = java.io.File(path)
+
+        if (!file.exists()) {
+            return Pair(
+                "文件不存在：customhaptic.json",
+                "文件不存在：customhaptic.json"
+            )
+        }
+
+        return try {
+            val json = JSONObject(file.readText())
+
+            fun parse(key: String): String {
+                val obj = json.optJSONObject(key)
+                    ?: return "$key：未配置"
+
+                val tArr = obj.optJSONArray("timings")
+                    ?: return "$key：缺少 timings"
+
+                val aArr = obj.optJSONArray("amplitudes")
+                    ?: return "$key：缺少 amplitudes"
+
+                if (tArr.length() != aArr.length()) {
+                    error("$key: timings 与 amplitudes 长度不一致")
+                }
+
+                if (tArr.length() == 0) {
+                    error("$key: 数组不能为空")
+                }
+
+                if (tArr.getLong(0) != 0L) {
+                    error("$key: timings[0] 必须为 0")
+                }
+
+                val timings = LongArray(tArr.length()) {
+                    tArr.getLong(it)
+                }
+
+                val amplitudes = IntArray(aArr.length()) {
+                    aArr.getInt(it)
+                }
+
+                if (amplitudes.any { it !in 0..255 }) {
+                    error("$key: amplitudes 值必须在 0~255 之间")
+                }
+
+                return buildString {
+                    append("timings:\n")
+                    append("[")
+                    append(timings.joinToString(", "))
+                    append("]\n\n")
+
+                    append("amplitudes:\n")
+                    append("[")
+                    append(amplitudes.joinToString(", "))
+                    append("]")
+                }
+            }
+
+            Pair(
+                parse("down"),
+                parse("up")
+            )
+
+        } catch (e: Exception) {
+            val msg = e.message ?: "未知错误"
+            Pair(msg, msg)
+        }
+    }
+
+    val options = listOf("无震动", "系统预设风格", "自定义", "自定义波形")
     val systemHaptics = listOf(
         "Virtual Key",
         "Virtual Key Release",
@@ -168,7 +243,33 @@ fun SettingsScreen(
                     )
                 }
             }
+            if (state.downIndex == 3) {
+                val preview = remember {
+                    loadCustomHapticPreview(context)
+                }
 
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    insideMargin = PaddingValues(8.dp)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(8.dp)
+                    ) {
+                        Text(
+                            text = "按下（Down）",
+                            fontSize = 13.sp
+                        )
+
+                        Text(
+                            text = preview.first,
+                            fontSize = 13.sp,
+                            color = MiuixTheme.colorScheme.onSurfaceContainerVariant
+                        )
+                    }
+                }
+            }
             HorizontalDivider(
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 16.dp)
             )
@@ -230,6 +331,33 @@ fun SettingsScreen(
                         valueRange = 0f..1f,
                         enabled = state.upIndex == 2
                     )
+                }
+            }
+            if (state.upIndex == 3) {
+                val preview = remember {
+                    loadCustomHapticPreview(context)
+                }
+
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    insideMargin = PaddingValues(8.dp)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(8.dp)
+                    ) {
+                        Text(
+                            text = "抬起（Up）",
+                            fontSize = 13.sp
+                        )
+
+                        Text(
+                            text = preview.second,
+                            fontSize = 13.sp,
+                            color = MiuixTheme.colorScheme.onSurfaceContainerVariant
+                        )
+                    }
                 }
             }
         }
