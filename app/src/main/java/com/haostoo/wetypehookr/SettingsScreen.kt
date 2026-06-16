@@ -120,7 +120,7 @@ fun SettingsScreen(
         }
     }
 
-    val options = listOf("无震动", "系统预设风格", "自定义", "自定义波形")
+    val options = listOf("无震动", "系统预设风格", "简单自定义", "自定义波形")
     val systemHaptics = listOf(
         "Virtual Key",
         "Virtual Key Release",
@@ -256,6 +256,7 @@ fun SettingsScreen(
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp)
                 ) {
                     Column(
                         modifier = Modifier.padding(8.dp)
@@ -356,6 +357,7 @@ fun SettingsScreen(
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp)
                 ) {
                     Column(
                         modifier = Modifier.padding(8.dp)
