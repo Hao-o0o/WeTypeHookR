@@ -1,5 +1,6 @@
 package com.haostoo.wetypehookr
 
+import android.content.Context
 import android.widget.Toast
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -12,6 +13,10 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import dev.jeziellago.compose.markdowntext.MarkdownText
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import org.xmlpull.v1.XmlPullParser
 import org.xmlpull.v1.XmlPullParserFactory
 import top.yukonga.miuix.kmp.basic.*
 import top.yukonga.miuix.kmp.icon.MiuixIcons
@@ -21,10 +26,11 @@ import top.yukonga.miuix.kmp.overlay.OverlayDialog
 import top.yukonga.miuix.kmp.theme.LocalDismissState
 import top.yukonga.miuix.kmp.window.WindowDialog
 import java.io.File
+import java.net.URL
 
 // ================= 配置文件路径 =================
 
-internal fun configFile(context: android.content.Context): File {
+internal fun configFile(context: Context): File {
     val dir = File(context.getExternalFilesDir(null), "haostoo/config")
     dir.mkdirs()
     val file = File(dir, "config.xml")
@@ -47,7 +53,7 @@ fun defaultSettings() = SettingsState(
     downSystemIndex = 0,
     upSystemIndex = 3,
 )
-internal fun readConfig(context: android.content.Context): SettingsState {
+internal fun readConfig(context: Context): SettingsState {
     val file = configFile(context)
     val default = defaultSettings()
     if (!file.exists()) return default
@@ -61,8 +67,8 @@ internal fun readConfig(context: android.content.Context): SettingsState {
         var downDuration = 50f; var downStrength = 0.5f
         var upDuration = 50f; var upStrength = 0.5f
         var event = parser.eventType
-        while (event != org.xmlpull.v1.XmlPullParser.END_DOCUMENT) {
-            if (event == org.xmlpull.v1.XmlPullParser.START_TAG) {
+        while (event != XmlPullParser.END_DOCUMENT) {
+            if (event == XmlPullParser.START_TAG) {
                 when (parser.name) {
                     "down_mode"     -> downMode     = parser.nextText().toInt()
                     "up_mode"       -> upMode       = parser.nextText().toInt()
@@ -86,7 +92,7 @@ internal fun readConfig(context: android.content.Context): SettingsState {
 
 // ================= WRITE =================
 
-internal fun writeConfig(context: android.content.Context, state: SettingsState) {
+internal fun writeConfig(context: Context, state: SettingsState) {
     try {
         val file = configFile(context)
         val xml = """
@@ -130,9 +136,9 @@ fun App(onClose: (() -> Unit)? = null) {
     var readmeText by remember { mutableStateOf("加载中...") }
 
     LaunchedEffect(Unit) {
-        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+        withContext(Dispatchers.IO) {
             readmeText = try {
-                java.net.URL("https://raw.githubusercontent.com/Xposed-Modules-Repo/com.haostoo.wetypehookr/main/README.md")
+                URL("https://raw.githubusercontent.com/Xposed-Modules-Repo/com.haostoo.wetypehookr/main/README.md")
                     .readText()
             } catch (e: Exception) {
                 "加载失败：${e.message}"
@@ -193,7 +199,10 @@ fun App(onClose: (() -> Unit)? = null) {
                             .padding(horizontal = 16.dp, vertical = 8.dp)
                             .verticalScroll(rememberScrollState())
                     ) {
-                        Text(readmeText)
+                        MarkdownText(
+                            markdown = readmeText,
+                            modifier = Modifier.fillMaxWidth()
+                        )
                     }
                     TextButton(
                         text = "确定",

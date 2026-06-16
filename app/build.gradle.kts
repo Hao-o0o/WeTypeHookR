@@ -87,6 +87,7 @@ dependencies {
     implementation("androidx.navigation:navigation-compose:2.9.8")
     implementation("androidx.navigationevent:navigationevent-compose:1.1.0")
     implementation("io.coil-kt:coil-compose:2.6.0")
+    implementation("com.github.jeziellago:compose-markdown:0.5.4")
 }
 java {
     toolchain {
