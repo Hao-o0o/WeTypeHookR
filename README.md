@@ -23,10 +23,10 @@
 
 - 对模块进行的 **任何修改**（包括修改模块设置/更新模块/更新本体），都需要**保存**并**重启输入法**才能生效。
 
-- 模块的配置文件位于``/storage/emulated/0/Android/data/包名/files/haostoo/``，其中``config.xml``为基础配置，由模块自动写入。
+- 模块的配置文件位于``/storage/emulated/0/Android/data/包名/files/haostoo/config/``，其中``config.xml``为基础配置，由模块自动写入。
 保存配置的操作实际也是在此处写入，通常无需手动操作。
 
-- ``customhaptic.json``为自定义波形的配置文件，需手动创建，详见[高级配置](#高级配置)
+- ``/storage/emulated/0/Android/data/包名/files/haostoo/config/customhaptic.json``为自定义波形的配置文件，需手动创建，详见[高级配置](#高级配置)
 
 ### 高级配置
 

@@ -52,13 +52,13 @@ fun injectSettingsPage(activity: Activity) {
             val logDir = android.os.Environment.getExternalStorageDirectory()
                 .resolve("Android/data/${activity.packageName}/files/haostoo/")
             logDir.mkdirs()
-            logDir.resolve("inject_log.txt").appendText("pluginContext OK\n")
+            //logDir.resolve("inject_log.txt").appendText("pluginContext OK\n")
         }
     } catch (e: Exception) {
         val logDir = android.os.Environment.getExternalStorageDirectory()
             .resolve("Android/data/${activity.packageName}/files/haostoo/")
         logDir.mkdirs()
-        logDir.resolve("inject_log.txt").appendText("pluginContext FAILED: $e\n")
+        //logDir.resolve("inject_log.txt").appendText("pluginContext FAILED: $e\n")
         activity
     }
 

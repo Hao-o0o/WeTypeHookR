@@ -400,11 +400,11 @@ fun SettingsScreen(
             show = showAboutDialog,
             onDismissRequest = { showAboutDialog = false }
         ) {
-            val moduleVersion = "${BuildConfig.VERSION_NAME}(${BuildConfig.VERSION_CODE})"
+            val moduleVersion = "${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})"
             val hostVersion = remember {
                 try {
                     val info = context.packageManager.getPackageInfo(if(isDoubaoIme)"com.bytedance.android.doubaoime" else "com.tencent.wetype", 0)
-                    "${info.versionName}(${
+                    "${info.versionName} (${
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P)
                             info.longVersionCode
                         else

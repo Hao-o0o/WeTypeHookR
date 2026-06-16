@@ -138,7 +138,7 @@ fun App(onClose: (() -> Unit)? = null) {
     LaunchedEffect(Unit) {
         withContext(Dispatchers.IO) {
             readmeText = try {
-                URL("https://raw.githubusercontent.com/Xposed-Modules-Repo/com.haostoo.wetypehookr/main/README.md")
+                URL("https://raw.githubusercontent.com/Hao-o0o/WeTypeHookR/master/README.md")
                     .readText()
             } catch (e: Exception) {
                 "加载失败：${e.message}"
@@ -186,7 +186,7 @@ fun App(onClose: (() -> Unit)? = null) {
                 }
             }
             WindowDialog(
-                title = "使用说明",
+                title = "使用说明\n加载失败可以自行到仓库查看README",
                 show = showReadmeDialog,
                 onDismissRequest = { showReadmeDialog = false },
                 modifier = Modifier.heightIn(max = 700.dp)
