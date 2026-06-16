@@ -24,7 +24,45 @@ class MainModule : XposedModule() {
             val timings: LongArray,
             val amplitudes: IntArray
         )
-
+        fun triggerHapticPreview(
+            context: android.content.Context,
+            view: View,
+            modeIndex: Int,
+            systemIndex: Int,
+            duration: Float,
+            strength: Float,
+            isDown: Boolean
+        ) {
+            val vibrator = context.getSystemService(android.os.Vibrator::class.java)
+            when (modeIndex) {
+                1 -> view.performHapticFeedback(hapticConstantForIndex(systemIndex))
+                2 -> {
+                    if (!vibrator.hasVibrator()) return
+                    if (android.os.Build.VERSION.SDK_INT >= 26) {
+                        vibrator.vibrate(
+                            android.os.VibrationEffect.createOneShot(
+                                duration.toLong(),
+                                (strength * 255).toInt().coerceIn(1, 255)
+                            )
+                        )
+                    } else {
+                        @Suppress("DEPRECATION")
+                        vibrator.vibrate(duration.toLong())
+                    }
+                }
+                3 -> {
+                    if (!vibrator.hasVibrator()) return
+                    if (android.os.Build.VERSION.SDK_INT >= 26) {
+                        val waveform = if (isDown) cachedCustomHaptic?.down else cachedCustomHaptic?.up
+                        waveform?.let {
+                            vibrator.vibrate(
+                                android.os.VibrationEffect.createWaveform(it.timings, it.amplitudes, -1)
+                            )
+                        }
+                    }
+                }
+            }
+        }
         data class CustomHapticConfig(
             val down: WaveformHaptic?,
             val up: WaveformHaptic?
@@ -317,40 +355,19 @@ class MainModule : XposedModule() {
             when (event.actionMasked) {
 
                 MotionEvent.ACTION_DOWN -> {
-                    when (config.downIndex) {
-                        1 -> view.performHapticFeedback(hapticConstantForIndex(config.downSystemIndex))
-                        2 -> vibrateCompat(config.downDuration.toLong(), config.downStrength)
-                        3 -> cachedCustomHaptic?.down?.let { vibrateWaveform(it.timings, it.amplitudes) }
-                    }
-
+                    triggerHapticPreview(view.context, view, config.downIndex, config.downSystemIndex, config.downDuration, config.downStrength, isDown = true)
                     return chain.proceed()
                 }
-
                 MotionEvent.ACTION_UP -> {
-                    when (config.upIndex) {
-                        1 -> view.performHapticFeedback(hapticConstantForIndex(config.upSystemIndex))
-                        2 -> vibrateCompat(config.upDuration.toLong(), config.upStrength)
-                        3 -> cachedCustomHaptic?.up?.let { vibrateWaveform(it.timings, it.amplitudes) }
-                    }
-
+                    triggerHapticPreview(view.context, view, config.upIndex, config.upSystemIndex, config.upDuration, config.upStrength, isDown = false)
                     return chain.proceed()
                 }
-
                 MotionEvent.ACTION_POINTER_DOWN -> {
-                    when (config.downIndex) {
-                        1 -> view.performHapticFeedback(hapticConstantForIndex(config.downSystemIndex))
-                        2 -> vibrateCompat(config.downDuration.toLong(), config.downStrength)
-                        3 -> cachedCustomHaptic?.down?.let { vibrateWaveform(it.timings, it.amplitudes) }
-                    }
+                    triggerHapticPreview(view.context, view, config.downIndex, config.downSystemIndex, config.downDuration, config.downStrength, isDown = true)
                     return chain.proceed()
                 }
-
                 MotionEvent.ACTION_POINTER_UP -> {
-                    when (config.upIndex) {
-                        1 -> view.performHapticFeedback(hapticConstantForIndex(config.upSystemIndex))
-                        2 -> vibrateCompat(config.upDuration.toLong(), config.upStrength)
-                        3 -> cachedCustomHaptic?.up?.let { vibrateWaveform(it.timings, it.amplitudes) }
-                    }
+                    triggerHapticPreview(view.context, view, config.upIndex, config.upSystemIndex, config.upDuration, config.upStrength, isDown = false)
                     return chain.proceed()
                 }
             }

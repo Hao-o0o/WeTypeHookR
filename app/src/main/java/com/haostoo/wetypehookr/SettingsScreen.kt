@@ -1,5 +1,8 @@
 package com.haostoo.wetypehookr
 
+import android.content.Context
+import android.content.Intent
+import android.os.Build
 import android.view.View
 import android.widget.Toast
 import androidx.compose.foundation.layout.*
@@ -22,6 +25,7 @@ import top.yukonga.miuix.kmp.overlay.OverlayDialog
 import top.yukonga.miuix.kmp.preference.ArrowPreference
 import top.yukonga.miuix.kmp.preference.OverlayDropdownPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
+import java.io.File
 
 data class SettingsState(
     val downIndex: Int,
@@ -44,9 +48,9 @@ fun SettingsScreen(
         context.packageName == "com.bytedance.android.doubaoime"
     }
 
-    fun loadCustomHapticPreview(context: android.content.Context): Pair<String, String> {
+    fun loadCustomHapticPreview(context: Context): Pair<String, String> {
         val path = "/storage/emulated/0/Android/data/${context.packageName}/files/haostoo/config/customhaptic.json"
-        val file = java.io.File(path)
+        val file = File(path)
 
         if (!file.exists()) {
             return Pair(
@@ -193,6 +197,7 @@ fun SettingsScreen(
                     onStateChange(state.copy(downIndex = it))
                 }
             )
+
             var view = LocalView.current
             if (state.downIndex == 1 ) run {
                 OverlayDropdownPreference(
@@ -214,7 +219,7 @@ fun SettingsScreen(
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text(
                         "按下震动时长：${state.downDuration.toInt()} ms",
-                        color = if (state.downIndex == 2) Color.Unspecified else Color.LightGray
+                        color = Color.Unspecified
                     )
 
                     Slider(
@@ -230,7 +235,7 @@ fun SettingsScreen(
                 Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
                     Text(
                         "按下震动强度：${(state.downStrength * 100).toInt()} %",
-                        color = if (state.downIndex == 2) Color.Unspecified else Color.LightGray
+                        color = Color.Unspecified
                     )
 
                     Slider(
@@ -251,8 +256,6 @@ fun SettingsScreen(
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(16.dp),
-                    insideMargin = PaddingValues(8.dp)
                 ) {
                     Column(
                         modifier = Modifier.padding(8.dp)
@@ -270,6 +273,20 @@ fun SettingsScreen(
                     }
                 }
             }
+            val downView = LocalView.current
+            ArrowPreference(
+                title = "测试按下震动",
+                onClick = {
+                    if (state.downIndex != 0) {
+                        MainModule.triggerHapticPreview(
+                            context, downView,
+                            state.downIndex, state.downSystemIndex,
+                            state.downDuration, state.downStrength,
+                            isDown = true
+                        )
+                    }
+                }
+            )
             HorizontalDivider(
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 16.dp)
             )
@@ -304,7 +321,7 @@ fun SettingsScreen(
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text(
                         "抬起震动时长：${state.upDuration.toInt()} ms",
-                        color = if (state.upIndex == 2) Color.Unspecified else Color.LightGray
+                        color = Color.Unspecified
                     )
 
                     Slider(
@@ -312,15 +329,14 @@ fun SettingsScreen(
                         onValueChange = {
                             onStateChange(state.copy(upDuration = it))
                         },
-                        valueRange = 10f..200f,
-                        enabled = state.upIndex == 2
+                        valueRange = 10f..200f
                     )
                 }
 
                 Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
                     Text(
                         "抬起震动强度：${(state.upStrength * 100).toInt()} %",
-                        color = if (state.upIndex == 2) Color.Unspecified else Color.LightGray
+                        color = Color.Unspecified
                     )
 
                     Slider(
@@ -328,8 +344,7 @@ fun SettingsScreen(
                         onValueChange = {
                             onStateChange(state.copy(upStrength = it))
                         },
-                        valueRange = 0f..1f,
-                        enabled = state.upIndex == 2
+                        valueRange = 0f..1f
                     )
                 }
             }
@@ -341,8 +356,6 @@ fun SettingsScreen(
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(16.dp),
-                    insideMargin = PaddingValues(8.dp)
                 ) {
                     Column(
                         modifier = Modifier.padding(8.dp)
@@ -360,6 +373,20 @@ fun SettingsScreen(
                     }
                 }
             }
+            val upView = LocalView.current
+            ArrowPreference(
+                title = "测试抬起震动",
+                onClick = {
+                    if (state.upIndex != 0) {
+                        MainModule.triggerHapticPreview(
+                            context, upView,
+                            state.upIndex, state.upSystemIndex,
+                            state.upDuration, state.upStrength,
+                            isDown = false
+                        )
+                    }
+                }
+            )
         }
 
         // ===== 关于 =====
@@ -376,7 +403,7 @@ fun SettingsScreen(
                 try {
                     val info = context.packageManager.getPackageInfo(if(isDoubaoIme)"com.bytedance.android.doubaoime" else "com.tencent.wetype", 0)
                     "${info.versionName}(${
-                        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P)
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P)
                             info.longVersionCode
                         else
                             info.longVersionCode
@@ -396,8 +423,8 @@ fun SettingsScreen(
             ArrowPreference(
                 title = "GitHub 仓库",
                 onClick = {
-                    val intent = android.content.Intent(
-                        android.content.Intent.ACTION_VIEW,
+                    val intent = Intent(
+                        Intent.ACTION_VIEW,
                         "https://github.com/Hao-o0o/WeTypeHookR".toUri()
                     )
                     context.startActivity(intent)
@@ -409,8 +436,8 @@ fun SettingsScreen(
             ArrowPreference(
                 title = "酷安主页",
                 onClick = {
-                    val intent = android.content.Intent(
-                        android.content.Intent.ACTION_VIEW,
+                    val intent = Intent(
+                        Intent.ACTION_VIEW,
                         "https://www.coolapk.com/u/19859750".toUri()
                     )
                     context.startActivity(intent)
