@@ -69,7 +69,6 @@ class MainModule : XposedModule() {
         )
 
         @Volatile var cachedCustomHaptic: CustomHapticConfig? = null
-
         private fun readCustomHaptic(packageName: String): CustomHapticConfig? {
             val file = File(
                 "/storage/emulated/0/Android/data/$packageName/files/haostoo/config/customhaptic.json"

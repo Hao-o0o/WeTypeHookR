@@ -2,6 +2,8 @@ package com.haostoo.wetypehookr
 
 import android.widget.Toast
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -14,7 +16,10 @@ import org.xmlpull.v1.XmlPullParserFactory
 import top.yukonga.miuix.kmp.basic.*
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Back
+import top.yukonga.miuix.kmp.icon.extended.Help
 import top.yukonga.miuix.kmp.overlay.OverlayDialog
+import top.yukonga.miuix.kmp.theme.LocalDismissState
+import top.yukonga.miuix.kmp.window.WindowDialog
 import java.io.File
 
 // ================= 配置文件路径 =================
@@ -121,7 +126,19 @@ fun App(onClose: (() -> Unit)? = null) {
     val changed by remember(state, initialState) {
         derivedStateOf { state != initialState }
     }
+    var showReadmeDialog by remember { mutableStateOf(false) }
+    var readmeText by remember { mutableStateOf("加载中...") }
 
+    LaunchedEffect(Unit) {
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            readmeText = try {
+                java.net.URL("https://raw.githubusercontent.com/Xposed-Modules-Repo/com.haostoo.wetypehookr/main/README.md")
+                    .readText()
+            } catch (e: Exception) {
+                "加载失败：${e.message}"
+            }
+        }
+    }
     // 当前路由（用于判断标题）
     val currentRoute = navController.currentBackStackEntryAsState().value?.destination?.route
 
@@ -162,6 +179,29 @@ fun App(onClose: (() -> Unit)? = null) {
                     )
                 }
             }
+            WindowDialog(
+                title = "使用说明",
+                show = showReadmeDialog,
+                onDismissRequest = { showReadmeDialog = false },
+                modifier = Modifier.heightIn(max = 700.dp)
+            ) {
+                val dismiss = LocalDismissState.current
+                Column {
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(horizontal = 16.dp, vertical = 8.dp)
+                            .verticalScroll(rememberScrollState())
+                    ) {
+                        Text(readmeText)
+                    }
+                    TextButton(
+                        text = "确定",
+                        onClick = { dismiss?.invoke() },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            }
             SmallTopAppBar(
                 title = "设置",
 
@@ -177,6 +217,12 @@ fun App(onClose: (() -> Unit)? = null) {
 
                 actions = {
                     if (currentRoute == "settings") {
+                        IconButton(
+                            onClick = { showReadmeDialog = true },
+                            holdDownState = showReadmeDialog
+                        ) {
+                            Icon(MiuixIcons.Help, contentDescription = "使用说明")
+                        }
                         Button(
                             onClick = {
                                 writeConfig(context, state)
