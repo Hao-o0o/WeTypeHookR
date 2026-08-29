@@ -1,44 +1,34 @@
 package com.haostoo.wetypehookr
 
 import android.content.Context
-import android.widget.Toast
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.runtime.*
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.unit.dp
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
-import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
-import dev.jeziellago.compose.markdowntext.MarkdownText
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import org.xmlpull.v1.XmlPullParser
 import org.xmlpull.v1.XmlPullParserFactory
-import top.yukonga.miuix.kmp.basic.*
+import top.yukonga.miuix.kmp.basic.Icon
+import top.yukonga.miuix.kmp.basic.IconButton
+import top.yukonga.miuix.kmp.basic.Scaffold
+import top.yukonga.miuix.kmp.basic.SmallTopAppBar
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Back
-import top.yukonga.miuix.kmp.icon.extended.Help
-import top.yukonga.miuix.kmp.overlay.OverlayDialog
-import top.yukonga.miuix.kmp.theme.LocalDismissState
-import top.yukonga.miuix.kmp.window.WindowDialog
 import java.io.File
-import java.net.URL
 
 // ================= 配置文件路径 =================
 
 internal fun configFile(context: Context): File {
     val dir = File(context.getExternalFilesDir(null), "haostoo/config")
     dir.mkdirs()
-    val file = File(dir, "config.xml")
-//    try {
-//        File("/storage/emulated/0/Android/data/com.bytedance.android.doubaoime/files/haostoo/swipe_test.txt")
-//            .appendText("configFile path = ${file.absolutePath}\n")
-//    } catch (_: Exception) {}
-    return file
+    return File(dir, "config.xml")
 }
 
 // ================= READ =================
@@ -53,6 +43,7 @@ fun defaultSettings() = SettingsState(
     downSystemIndex = 0,
     upSystemIndex = 3,
 )
+
 internal fun readConfig(context: Context): SettingsState {
     val file = configFile(context)
     val default = defaultSettings()
@@ -112,108 +103,20 @@ internal fun writeConfig(context: Context, state: SettingsState) {
         e.printStackTrace()
     }
 }
+
 // ================= UI =================
+
 @Composable
 fun App(onClose: (() -> Unit)? = null) {
     val context = LocalContext.current
-    val isDoubaoIme = remember {
-        context.packageName == "com.bytedance.android.doubaoime"
-    }
-    var showReloadDialog by remember { mutableStateOf(false) }
-
+    var state by remember { mutableStateOf(readConfig(context)) }
 
     val navController = rememberNavController()
 
-
-    val loaded = remember { readConfig(context) }
-    var initialState by remember { mutableStateOf(loaded) }
-    var state by remember { mutableStateOf(loaded) }
-
-    val changed by remember(state, initialState) {
-        derivedStateOf { state != initialState }
-    }
-    var showReadmeDialog by remember { mutableStateOf(false) }
-    var readmeText by remember { mutableStateOf("加载中...") }
-
-    LaunchedEffect(Unit) {
-        withContext(Dispatchers.IO) {
-            readmeText = try {
-                URL("https://raw.githubusercontent.com/Hao-o0o/WeTypeHookR/master/README.md")
-                    .readText()
-            } catch (e: Exception) {
-                "加载失败：${e.message}"
-            }
-        }
-    }
-    // 当前路由（用于判断标题）
-    val currentRoute = navController.currentBackStackEntryAsState().value?.destination?.route
-
     Scaffold(
         topBar = {
-
-// 对话框放在 Scaffold 内
-            OverlayDialog(
-                title = "立即重载输入法？",
-                summary = if (isDoubaoIme)"配置已保存，是否立即重启豆包输入法使配置生效？" else "配置已保存，是否立即重启微信输入法使配置生效？",
-                show = showReloadDialog,
-                onDismissRequest = { showReloadDialog = false }
-            ) {
-                Row(
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    TextButton(
-                        text = "稍后",
-                        onClick = { showReloadDialog = false },
-                        modifier = Modifier.weight(1f)
-                    )
-                    Spacer(Modifier.width(20.dp))
-                    TextButton(
-                        text = "立即重载",
-                        onClick = {
-                            showReloadDialog = false
-                            if (isDoubaoIme)
-                            {MainModule.killDoubaoHld(context) { message ->
-                                Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
-                            }}
-                            else{
-                            MainModule.killWeTypeHld(context) { message ->
-                                Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
-                            }}
-                        },
-                        modifier = Modifier.weight(1f),
-                        colors = ButtonDefaults.textButtonColorsPrimary()
-                    )
-                }
-            }
-            WindowDialog(
-                title = "使用说明\n加载失败可以自行到仓库查看README",
-                show = showReadmeDialog,
-                onDismissRequest = { showReadmeDialog = false },
-                modifier = Modifier.heightIn(max = 700.dp)
-            ) {
-                val dismiss = LocalDismissState.current
-                Column {
-                    Column(
-                        modifier = Modifier
-                            .weight(1f)
-                            .padding(horizontal = 16.dp, vertical = 8.dp)
-                            .verticalScroll(rememberScrollState())
-                    ) {
-                        MarkdownText(
-                            markdown = readmeText,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                    }
-                    TextButton(
-                        text = "确定",
-                        onClick = { dismiss?.invoke() },
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
-            }
             SmallTopAppBar(
                 title = "设置",
-
                 navigationIcon = {
                     when {
                         onClose != null -> {
@@ -222,34 +125,10 @@ fun App(onClose: (() -> Unit)? = null) {
                             }
                         }
                     }
-                },
-
-                actions = {
-                    if (currentRoute == "settings") {
-                        IconButton(
-                            onClick = { showReadmeDialog = true },
-                            holdDownState = showReadmeDialog
-                        ) {
-                            Icon(MiuixIcons.Help, contentDescription = "使用说明")
-                        }
-                        Button(
-                            onClick = {
-                                writeConfig(context, state)
-                                initialState = state
-                                showReloadDialog = true
-                            },
-                            enabled = changed
-                        ) {
-                            Text("保存")
-                        }
-                    }
                 }
             )
         }
     ) { padding ->
-
-
-
         NavHost(
             navController = navController,
             startDestination = "settings",
@@ -257,7 +136,6 @@ fun App(onClose: (() -> Unit)? = null) {
                 .padding(top = padding.calculateTopPadding())
                 .fillMaxSize()
         ) {
-
             composable("settings") {
                 SettingsScreen(
                     state = state,

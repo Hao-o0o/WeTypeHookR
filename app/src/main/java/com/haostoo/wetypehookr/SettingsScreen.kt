@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.*
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -19,13 +20,19 @@ import androidx.compose.ui.unit.sp
 import androidx.core.net.toUri
 import com.haostoo.wetypehookr.MainModule.Companion.killDoubaoHld
 import com.haostoo.wetypehookr.MainModule.Companion.killWeTypeHld
+import dev.jeziellago.compose.markdowntext.MarkdownText
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import top.yukonga.miuix.kmp.basic.*
 import top.yukonga.miuix.kmp.overlay.OverlayDialog
 import top.yukonga.miuix.kmp.preference.ArrowPreference
 import top.yukonga.miuix.kmp.preference.OverlayDropdownPreference
+import top.yukonga.miuix.kmp.theme.LocalDismissState
 import top.yukonga.miuix.kmp.theme.MiuixTheme
+import top.yukonga.miuix.kmp.window.WindowDialog
 import java.io.File
+import java.net.URL
 
 data class SettingsState(
     val downIndex: Int,
@@ -43,11 +50,26 @@ fun SettingsScreen(
     state: SettingsState,
     onStateChange: (SettingsState) -> Unit
 ) {
+
     val context = LocalContext.current
+    val loaded = remember { readConfig(context) }
+    var initialState by remember { mutableStateOf(loaded) }
+    var showReloadDialog by remember { mutableStateOf(false) }
+    var showReadmeDialog by remember { mutableStateOf(false) }
+    var readmeText by remember { mutableStateOf("加载中...") }
     val isDoubaoIme = remember {
         context.packageName == "com.bytedance.android.doubaoime"
     }
-
+    LaunchedEffect(Unit) {
+        withContext(Dispatchers.IO) {
+            readmeText = try {
+                URL("https://raw.githubusercontent.com/Hao-o0o/WeTypeHookR/master/README.md")
+                    .readText()
+            } catch (e: Exception) {
+                "加载失败：${e.message}"
+            }
+        }
+    }
     fun loadCustomHapticPreview(context: Context): Pair<String, String> {
         val path = "/storage/emulated/0/Android/data/${context.packageName}/files/haostoo/config/customhaptic.json"
         val file = File(path)
@@ -390,6 +412,43 @@ fun SettingsScreen(
                 }
             )
         }
+        WindowDialog(
+            title = "使用说明\n加载失败可以自行到仓库查看README",
+            show = showReadmeDialog,
+            onDismissRequest = { showReadmeDialog = false },
+            modifier = Modifier.heightIn(max = 700.dp)
+        ) {
+            val dismiss = LocalDismissState.current
+            Column {
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(horizontal = 16.dp, vertical = 8.dp)
+                        .verticalScroll(rememberScrollState())
+                ) {
+                    MarkdownText(
+                        markdown = readmeText,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+                TextButton(
+                    text = "确定",
+                    onClick = { dismiss?.invoke() },
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        }
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 12.dp),
+            insideMargin = PaddingValues(0.dp)
+        ){
+        ArrowPreference(
+            title = "帮助文档",
+            onClick = { showReadmeDialog = true },
+            holdDownState = showReadmeDialog
+        )}
 
         // ===== 关于 =====
         var showAboutDialog by remember { mutableStateOf(false) }
@@ -452,8 +511,54 @@ fun SettingsScreen(
             )
         }
 
+        OverlayDialog(
+            title = "立即重载输入法？",
+            summary = if (isDoubaoIme)"配置已保存，是否立即重启豆包输入法使配置生效？" else "配置已保存，是否立即重启微信输入法使配置生效？",
+            show = showReloadDialog,
+            onDismissRequest = { showReloadDialog = false }
+        ) {
+            Row(
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                TextButton(
+                    text = "稍后",
+                    onClick = { showReloadDialog = false },
+                    modifier = Modifier.weight(1f)
+                )
+                Spacer(Modifier.width(20.dp))
+                TextButton(
+                    text = "立即重载",
+                    onClick = {
+                        showReloadDialog = false
+                        if (isDoubaoIme)
+                        {MainModule.killDoubaoHld(context) { message ->
+                            Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+                        }}
+                        else{
+                            MainModule.killWeTypeHld(context) { message ->
+                                Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+                            }}
+                    },
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.textButtonColorsPrimary()
+                )
+            }
+        }
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 12.dp),
+            insideMargin = PaddingValues(0.dp)
+        ) {
+            ArrowPreference(
+                title = "保存配置",
+                onClick = {
 
-
+                    writeConfig(context, state)
+                    initialState = state
+                    showReloadDialog = true }
+            )
+        }
         Card(
             modifier = Modifier
                 .fillMaxWidth()
