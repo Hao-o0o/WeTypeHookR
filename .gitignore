@@ -6,3 +6,5 @@ gradle.properties
 .idea
 release.jks
 *.hprof
+.kotlin/
+

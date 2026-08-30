@@ -25,7 +25,6 @@ import androidx.savedstate.SavedStateRegistry
 import androidx.savedstate.SavedStateRegistryController
 import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
-import top.yukonga.miuix.kmp.theme.MiuixTheme
 import java.io.File
 
 
@@ -66,6 +65,12 @@ fun injectSettingsPage(activity: Activity) {
     val isolatedContext = object : ContextWrapper(pluginContext) {
         //override fun getResources(): Resources = pluginContext.resources
         override fun getApplicationContext(): Context = this
+        // 关键：设置页运行在宿主（输入法）进程内，包名必须返回宿主包名，
+        // 否则配置读写路径与 MainModule 读取的路径不一致，且 isDoubaoIme 判断会永远为 false。
+        override fun getPackageName(): String = activity.packageName
+        // 关键：外部存储目录也必须指向宿主（输入法）的目录，而不是插件（模块）自己的目录，
+        // 保证配置读写（config.xml / customhaptic.json）与 MainModule 使用同一路径。
+        override fun getExternalFilesDir(type: String?): File = activity.getExternalFilesDir(type)!!
         //override fun getTheme(): Resources.Theme = pluginContext.theme
         override fun getSystemService(name: String): Any? {
             if (name == WINDOW_SERVICE) return activity.getSystemService(name)
@@ -111,9 +116,7 @@ fun injectSettingsPage(activity: Activity) {
                     LocalActivity provides activity,
                     LocalInjectedLifecycleOwner provides lifecycleOwner
                 ) {
-                    MiuixTheme {
-                        App(onClose = { activity.finish() })
-                    }
+                    App(onClose = { activity.finish() })
                 }
             }
         }

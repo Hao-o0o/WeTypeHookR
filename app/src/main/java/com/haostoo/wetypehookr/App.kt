@@ -1,6 +1,7 @@
 package com.haostoo.wetypehookr
 
 import android.content.Context
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
@@ -21,6 +22,9 @@ import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.SmallTopAppBar
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Back
+import top.yukonga.miuix.kmp.theme.MiuixTheme
+import top.yukonga.miuix.kmp.theme.darkColorScheme
+import top.yukonga.miuix.kmp.theme.lightColorScheme
 import java.io.File
 
 // ================= 配置文件路径 =================
@@ -42,6 +46,8 @@ fun defaultSettings() = SettingsState(
     upStrength = 0.5f,
     downSystemIndex = 0,
     upSystemIndex = 3,
+    themeMode = 2,
+    debugLog = false,
 )
 
 internal fun readConfig(context: Context): SettingsState {
@@ -57,6 +63,8 @@ internal fun readConfig(context: Context): SettingsState {
         var downSystem = 0; var upSystem = 0
         var downDuration = 50f; var downStrength = 0.5f
         var upDuration = 50f; var upStrength = 0.5f
+        var themeMode = 2
+        var debugLog = false
         var event = parser.eventType
         while (event != XmlPullParser.END_DOCUMENT) {
             if (event == XmlPullParser.START_TAG) {
@@ -69,12 +77,14 @@ internal fun readConfig(context: Context): SettingsState {
                     "down_strength" -> downStrength = parser.nextText().toFloat()
                     "up_duration"   -> upDuration   = parser.nextText().toFloat()
                     "up_strength"   -> upStrength   = parser.nextText().toFloat()
+                    "theme_mode"    -> themeMode    = parser.nextText().toInt()
+                    "debug_log"     -> debugLog     = parser.nextText().toBoolean()
                 }
             }
             event = parser.next()
         }
 
-        SettingsState(downMode, upMode, downDuration, downStrength, upDuration, upStrength, downSystem, upSystem)
+        SettingsState(downMode, upMode, downDuration, downStrength, upDuration, upStrength, downSystem, upSystem, themeMode, debugLog)
     } catch (e: Exception) {
         e.printStackTrace()
         default
@@ -96,6 +106,8 @@ internal fun writeConfig(context: Context, state: SettingsState) {
     <down_strength>${state.downStrength}</down_strength>
     <up_duration>${state.upDuration}</up_duration>
     <up_strength>${state.upStrength}</up_strength>
+    <theme_mode>${state.themeMode}</theme_mode>
+    <debug_log>${state.debugLog}</debug_log>
 </config>
 """.trimIndent()
         file.outputStream().use { it.write(xml.toByteArray(Charsets.UTF_8)) }
@@ -111,36 +123,43 @@ fun App(onClose: (() -> Unit)? = null) {
     val context = LocalContext.current
     var state by remember { mutableStateOf(readConfig(context)) }
 
+    // 外观主题：0=浅色 1=深色 2=跟随系统
+    val darkTheme = when (state.themeMode) {
+        0 -> false
+        1 -> true
+        else -> isSystemInDarkTheme()
+    }
+
     val navController = rememberNavController()
 
-    Scaffold(
-        topBar = {
-            SmallTopAppBar(
-                title = "设置",
-                navigationIcon = {
-                    when {
-                        onClose != null -> {
-                            IconButton(onClose) {
+    MiuixTheme(colors = if (darkTheme) darkColorScheme() else lightColorScheme()) {
+        Scaffold(
+            topBar = {
+                SmallTopAppBar(
+                    title = "设置",
+                    navigationIcon = {
+                        when {
+                            onClose != null -> IconButton(onClose) {
                                 Icon(MiuixIcons.Back, "close")
                             }
                         }
                     }
-                }
-            )
-        }
-    ) { padding ->
-        NavHost(
-            navController = navController,
-            startDestination = "settings",
-            modifier = Modifier
-                .padding(top = padding.calculateTopPadding())
-                .fillMaxSize()
-        ) {
-            composable("settings") {
-                SettingsScreen(
-                    state = state,
-                    onStateChange = { state = it }
                 )
+            }
+        ) { padding ->
+            NavHost(
+                navController = navController,
+                startDestination = "settings",
+                modifier = Modifier
+                    .padding(top = padding.calculateTopPadding())
+                    .fillMaxSize()
+            ) {
+                composable("settings") {
+                    SettingsScreen(
+                        state = state,
+                        onStateChange = { state = it }
+                    )
+                }
             }
         }
     }

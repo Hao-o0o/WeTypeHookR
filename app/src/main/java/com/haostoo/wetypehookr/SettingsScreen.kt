@@ -42,7 +42,9 @@ data class SettingsState(
     val upDuration: Float,
     val upStrength: Float,
     var downSystemIndex: Int,   // ✅ 新增
-    var upSystemIndex: Int
+    var upSystemIndex: Int,
+    var themeMode: Int = 2,     // 0=浅色 1=深色 2=跟随系统
+    var debugLog: Boolean = false // 调试日志输出开关
 )
 
 @Composable
@@ -52,10 +54,9 @@ fun SettingsScreen(
 ) {
 
     val context = LocalContext.current
-    val loaded = remember { readConfig(context) }
-    var initialState by remember { mutableStateOf(loaded) }
-    var showReloadDialog by remember { mutableStateOf(false) }
     var showReadmeDialog by remember { mutableStateOf(false) }
+    var showDebugDialog by remember { mutableStateOf(false) }
+    var showResetDialog by remember { mutableStateOf(false) }
     var readmeText by remember { mutableStateOf("加载中...") }
     val isDoubaoIme = remember {
         context.packageName == "com.bytedance.android.doubaoime"
@@ -197,7 +198,7 @@ fun SettingsScreen(
             Text(
                 modifier = Modifier
                     .padding(horizontal = 16.dp, vertical = 8.dp),
-                text = "❗❗❗ 在此页进行的任何修改都需要保存后并重启输入法进程生效❗❗❗",
+                text = "更新模块后需重启输入法。",
                 textDecoration = TextDecoration.Underline,
                 color = MiuixTheme.colorScheme.onSurfaceContainerVariant,
                 fontSize = 14.sp
@@ -438,18 +439,6 @@ fun SettingsScreen(
                 )
             }
         }
-        Card(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(top = 12.dp),
-            insideMargin = PaddingValues(0.dp)
-        ){
-        ArrowPreference(
-            title = "帮助文档",
-            onClick = { showReadmeDialog = true },
-            holdDownState = showReadmeDialog
-        )}
-
         // ===== 关于 =====
         var showAboutDialog by remember { mutableStateOf(false) }
 
@@ -511,102 +500,105 @@ fun SettingsScreen(
             )
         }
 
+        DebugDialog(
+            show = showDebugDialog,
+            state = state,
+            onStateChange = onStateChange,
+            onDismissRequest = { showDebugDialog = false }
+        )
+
         OverlayDialog(
-            title = "立即重载输入法？",
-            summary = if (isDoubaoIme)"配置已保存，是否立即重启豆包输入法使配置生效？" else "配置已保存，是否立即重启微信输入法使配置生效？",
-            show = showReloadDialog,
-            onDismissRequest = { showReloadDialog = false }
+            title = "恢复默认设置",
+            summary = "确定要恢复为默认配置吗？",
+            show = showResetDialog,
+            onDismissRequest = { showResetDialog = false }
         ) {
             Row(
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 TextButton(
-                    text = "稍后",
-                    onClick = { showReloadDialog = false },
+                    text = "取消",
+                    onClick = { showResetDialog = false },
                     modifier = Modifier.weight(1f)
                 )
                 Spacer(Modifier.width(20.dp))
                 TextButton(
-                    text = "立即重载",
+                    text = "确认",
                     onClick = {
-                        showReloadDialog = false
-                        if (isDoubaoIme)
-                        {MainModule.killDoubaoHld(context) { message ->
-                            Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
-                        }}
-                        else{
-                            MainModule.killWeTypeHld(context) { message ->
-                                Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
-                            }}
+                        showResetDialog = false
+                        onStateChange(defaultSettings())
                     },
                     modifier = Modifier.weight(1f),
                     colors = ButtonDefaults.textButtonColorsPrimary()
                 )
             }
         }
-        Card(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(top = 12.dp),
-            insideMargin = PaddingValues(0.dp)
-        ) {
-            ArrowPreference(
-                title = "保存配置",
-                onClick = {
 
-                    writeConfig(context, state)
-                    initialState = state
-                    showReloadDialog = true }
-            )
-        }
         Card(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(top = 12.dp),
             insideMargin = PaddingValues(0.dp)
         ) {
-            ArrowPreference(
-                title = if(isDoubaoIme)"关于模块 | DoubaoIME" else "关于模块 | WeType",
-                summary = "版本信息与开发者",
-                onClick = { showAboutDialog = true }
+            OverlayDropdownPreference(
+                title = "外观主题",
+                summary = listOf("浅色", "深色", "跟随系统")[state.themeMode.coerceIn(0, 2)],
+                items = listOf("浅色", "深色", "跟随系统"),
+                selectedIndex = state.themeMode.coerceIn(0, 2),
+                onSelectedIndexChange = {
+                    onStateChange(state.copy(themeMode = it))
+                    DebugLog.log(context, "ui", "theme changed to ${listOf("light", "dark", "system")[it.coerceIn(0, 2)]}")
+                }
             )
-        }
-        Card(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(top = 12.dp),
-            insideMargin = PaddingValues(0.dp)
-        ){
             ArrowPreference(
                 title = "恢复默认设置",
                 summary = "恢复后请保存生效",
+                onClick = { showResetDialog = true }
+            )
+            ArrowPreference(
+                title = "保存配置",
                 onClick = {
-                    val default = defaultSettings()
-                    onStateChange(default)
+                    writeConfig(context, state)
+                    DebugLog.log(context, "ui", "config saved: $state")
+                    Toast.makeText(context, "已保存，配置已生效", Toast.LENGTH_SHORT).show()
                 }
             )
-        }
-        Card(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(top = 12.dp),
-            insideMargin = PaddingValues(0.dp)
-        ){
             ArrowPreference(
                 title = "重载输入法",
-                summary = if(isDoubaoIme)"用于快速停止豆包输入法进程" else "需要授予微信输入法Root权限❗",
+                summary = if (isDoubaoIme) "用于快速停止豆包输入法进程" else "需要授予微信输入法Root权限❗",
                 onClick = {
-                    if(isDoubaoIme){
+                    if (isDoubaoIme) {
                         killDoubaoHld(context) { message ->
                             Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
                         }
-                    }
-                    else {
+                    } else {
                         killWeTypeHld(context) { message ->
                             Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
                         }
                     }
                 }
+            )
+        }
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 12.dp),
+            insideMargin = PaddingValues(0.dp)
+        ) {
+            ArrowPreference(
+                title = "帮助文档",
+                onClick = { showReadmeDialog = true },
+                holdDownState = showReadmeDialog
+            )
+            ArrowPreference(
+                title = if (isDoubaoIme) "关于模块 | DoubaoIME" else "关于模块 | WeType",
+                summary = "版本信息与开发者",
+                onClick = { showAboutDialog = true }
+            )
+            ArrowPreference(
+                title = "调试与日志",
+                summary = "日志输出开关 / 清除 / 导出",
+                onClick = { showDebugDialog = true }
             )
         }
     }

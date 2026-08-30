@@ -1,7 +1,6 @@
 package com.haostoo.wetypehookr
 
 import android.app.Activity
-import android.content.Context
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
@@ -14,7 +13,6 @@ import kotlinx.coroutines.launch
 import org.xmlpull.v1.XmlPullParser
 import org.xmlpull.v1.XmlPullParserFactory
 import java.io.File
-import kotlin.jvm.java
 
 class MainModule : XposedModule() {
 
@@ -34,6 +32,13 @@ class MainModule : XposedModule() {
             isDown: Boolean
         ) {
             val vibrator = context.getSystemService(android.os.Vibrator::class.java)
+            // 调试日志：记录每次触发的震动风格与参数（受 debugLog 开关控制）
+            if (DebugLog.isEnabled()) {
+                DebugLog.log(
+                    context, "vibrate",
+                    "${if (isDown) "down" else "up"} mode=$modeIndex sys=$systemIndex dur=${duration}ms str=$strength"
+                )
+            }
             when (modeIndex) {
                 1 -> view.performHapticFeedback(hapticConstantForIndex(systemIndex))
                 2 -> {
@@ -63,6 +68,7 @@ class MainModule : XposedModule() {
                 }
             }
         }
+
         data class CustomHapticConfig(
             val down: WaveformHaptic?,
             val up: WaveformHaptic?
@@ -141,17 +147,66 @@ class MainModule : XposedModule() {
         private const val DOUBAO_PKG = "com.bytedance.android.doubaoime"
         private fun configPath(packageName: String) =
             "/storage/emulated/0/Android/data/$packageName/files/haostoo/config/config.xml"
-// 新增
         @Volatile private var toastShown = false
 
         @Volatile var cachedSettings: SettingsState =
             SettingsState(0, 0, 50f, 0.5f, 50f, 0.5f, 0, 0)
 
+        private val DEFAULT_SETTINGS = SettingsState(1, 1, 50f, 0.5f, 50f, 0.5f, 0, 3)
+
+        // ================= 日志导出（文件选择器结果回调） =================
+        const val LOG_EXPORT_REQUEST_CODE = 0x5A17
+        @Volatile var pendingLogExport: ((android.net.Uri) -> Unit)? = null
+        fun requestLogExport(cb: (android.net.Uri) -> Unit) {
+            pendingLogExport = cb
+        }
+
+        // ================= 配置热重载（文件监听） =================
+        // 设置页与键盘 hook 分属不同进程（主进程 / hld 进程），但共享同一配置文件。
+        // FileObserver 监听配置目录，任一进程写入（保存设置 / 更新 customhaptic.json）
+        // 都会触发各进程重新读取缓存，保存后立即生效，无需再杀进程。
+        @Volatile private var configObserver: android.os.FileObserver? = null
+
+        fun startConfigWatcher(packageName: String) {
+            try {
+                val configDir = File(
+                    "/storage/emulated/0/Android/data/$packageName/files/haostoo/config"
+                )
+                configDir.mkdirs()
+                configObserver?.stopWatching()
+                configObserver = object : android.os.FileObserver(
+                    configDir.absolutePath,
+                    android.os.FileObserver.CLOSE_WRITE or
+                        android.os.FileObserver.CREATE or
+                        android.os.FileObserver.MOVED_TO
+                ) {
+                    override fun onEvent(event: Int, path: String?) {
+                        try {
+                            val fresh = readConfigDirect(packageName)
+                            if (fresh != null) {
+                                cachedSettings = fresh
+                                Log.i(TAG, "Config reloaded: $fresh")
+                            } else {
+                                // 文件缺失/为空/解析失败时保留旧缓存，避免被默认值覆盖
+                                Log.e(TAG, "Config reload skipped (missing/empty/parse fail), keep cached=$cachedSettings")
+                            }
+                            cachedCustomHaptic = readCustomHaptic(packageName)
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Config reload failed", e)
+                        }
+                    }
+                }.also { it.startWatching() }
+                Log.i(TAG, "✅ Config watcher started: ${configDir.absolutePath}")
+            } catch (e: Exception) {
+                Log.e(TAG, "Config watcher start failed", e)
+            }
+        }
+
         // ================= 配置读取 =================
-        private fun readConfigDirect(packageName: String): SettingsState {
+        // 返回 null 表示文件缺失/为空/解析失败；调用方据此保留旧缓存或使用默认值
+        private fun readConfigDirect(packageName: String): SettingsState? {
             val file = File(configPath(packageName))
-            val default = SettingsState(1, 1, 50f, 0.5f, 50f, 0.5f, 0, 3)
-            if (!file.exists()) return default
+            if (!file.exists() || file.length() == 0L) return null
 
             return try {
                 val parser = XmlPullParserFactory.newInstance().newPullParser()
@@ -161,6 +216,8 @@ class MainModule : XposedModule() {
                 var downSystem = 0; var upSystem = 0
                 var downDuration = 50f; var downStrength = 0.5f
                 var upDuration = 50f; var upStrength = 0.5f
+                var themeMode = 2
+                var debugLog = false
                 var event = parser.eventType
                 while (event != XmlPullParser.END_DOCUMENT) {
                     if (event == XmlPullParser.START_TAG) {
@@ -173,29 +230,26 @@ class MainModule : XposedModule() {
                             "down_strength" -> downStrength = parser.nextText().toFloat()
                             "up_duration"   -> upDuration   = parser.nextText().toFloat()
                             "up_strength"   -> upStrength   = parser.nextText().toFloat()
+                            "theme_mode"    -> themeMode    = parser.nextText().toInt()
+                            "debug_log"     -> debugLog     = parser.nextText().toBoolean()
                         }
                     }
                     event = parser.next()
                 }
-                SettingsState(downMode, upMode, downDuration, downStrength, upDuration, upStrength, downSystem, upSystem)
+                SettingsState(downMode, upMode, downDuration, downStrength, upDuration, upStrength, downSystem, upSystem, themeMode, debugLog)
             } catch (e: Exception) {
                 Log.e(TAG, "parse FAILED", e)
-                default
+                null
             }
         }
     }
 
-    override fun onPackageLoaded(param: XposedModuleInterface.PackageLoadedParam) {}
-
     override fun onPackageReady(param: XposedModuleInterface.PackageReadyParam) {
         if (param.packageName != TARGET_PKG && param.packageName != DOUBAO_PKG) return
 
-        try {
-            cachedSettings = readConfigDirect(param.packageName)
-            cachedCustomHaptic = readCustomHaptic(param.packageName)
-        } catch (e: Exception) {
-            Log.e(TAG, "Config load failed", e)
-        }
+        cachedSettings = readConfigDirect(param.packageName) ?: DEFAULT_SETTINGS
+        cachedCustomHaptic = readCustomHaptic(param.packageName)
+        startConfigWatcher(param.packageName)
 
         val isDoubao = param.packageName == DOUBAO_PKG
         val loaders = collectClassLoaders(param.classLoader)
@@ -216,12 +270,8 @@ class MainModule : XposedModule() {
                     val clazz = loader.loadClass("com.bytedance.android.input.keyboard.KeyboardView")
                     val method = clazz.getDeclaredMethod("onTouchEvent", MotionEvent::class.java)
                     hook(method).intercept(ImeRootViewHooker())
-                    //File("/storage/emulated/0/Android/data/com.bytedance.android.doubaoime/files/haostoo/swipe_test.txt")
-                        //.appendText("KeyboardView hooked\n")
                     break
-                } catch (e: Exception) {
-                    //File("/storage/emulated/0/Android/data/com.bytedance.android.doubaoime/files/haostoo/swipe_test.txt")
-                        //.appendText("KeyboardView hook failed: $e\n")
+                } catch (_: Exception) {
                 }
             }
         }
@@ -274,22 +324,49 @@ class MainModule : XposedModule() {
                                         injectSettingsPage(activity)
                                     }
                                     return result
-                                } catch (e: Exception) {
-                                   // File("/storage/emulated/0/Android/data/com.bytedance.android.doubaoime/files/haostoo/swipe_test.txt")
-                                       // .appendText("hook intercept fail: $e\n${e.stackTraceToString()}\n")
+                                } catch (_: Exception) {
                                     return chain.proceed()
                                 }
                             }
                         })
-                        //File("/storage/emulated/0/Android/data/com.bytedance.android.doubaoime/files/haostoo/swipe_test.txt")
-                            //.appendText("FeedbackActivity hooked via ${onCreateMethod.declaringClass.name}\n")
                     }
                     break
-                } catch (e: Exception) {
-                   // File("/storage/emulated/0/Android/data/com.bytedance.android.doubaoime/files/haostoo/swipe_test.txt")
-                       // .appendText("hook FeedbackActivity failed: $e\n")
+                } catch (_: Exception) {
                 }
             }
+        }
+
+        // ================= Hook 日志导出结果（框架方法，版本免疫） =================
+        // 设置页「导出日志」通过 ACTION_CREATE_DOCUMENT 选位置，结果经 Activity.onActivityResult 回传
+        try {
+            val m = android.app.Activity::class.java.getMethod(
+                "onActivityResult",
+                Int::class.javaPrimitiveType!!,
+                Int::class.javaPrimitiveType!!,
+                android.content.Intent::class.java
+            )
+            hook(m).intercept(object : XposedInterface.Hooker {
+                override fun intercept(chain: XposedInterface.Chain): Any? {
+                    val result = chain.proceed()
+                    val cb = pendingLogExport
+                    if (cb != null) {
+                        val requestCode = chain.args.getOrNull(0) as? Int
+                        val resultCode = chain.args.getOrNull(1) as? Int
+                        val data = chain.args.getOrNull(2) as? android.content.Intent
+                        if (requestCode == LOG_EXPORT_REQUEST_CODE && resultCode == android.app.Activity.RESULT_OK) {
+                            val uri = data?.data
+                            if (uri != null) {
+                                pendingLogExport = null
+                                cb(uri)
+                            }
+                        }
+                    }
+                    return result
+                }
+            })
+            Log.i(TAG, "✅ Hooked Activity.onActivityResult")
+        } catch (e: Exception) {
+            Log.e(TAG, "onActivityResult hook failed", e)
         }
     }
 
@@ -328,29 +405,6 @@ class MainModule : XposedModule() {
 
             val config = cachedSettings
 
-            val vibrator = view.context.getSystemService(android.os.Vibrator::class.java) as android.os.Vibrator
-            fun vibrateCompat(duration: Long, strength: Float) {
-                if (!vibrator.hasVibrator()) return
-                if (android.os.Build.VERSION.SDK_INT >= 26) {
-                    vibrator.vibrate(
-                        android.os.VibrationEffect.createOneShot(
-                            duration,
-                            (strength * 255).toInt().coerceIn(1, 255)
-                        )
-                    )
-                } else {
-                    @Suppress("DEPRECATION")
-                    vibrator.vibrate(duration)
-                }
-            }
-            fun vibrateWaveform(timings: LongArray, amplitudes: IntArray) {
-                if (!vibrator.hasVibrator()) return
-                if (android.os.Build.VERSION.SDK_INT >= 26) {
-                    vibrator.vibrate(
-                        android.os.VibrationEffect.createWaveform(timings, amplitudes, -1)
-                    )
-                }
-            }
             when (event.actionMasked) {
 
                 MotionEvent.ACTION_DOWN -> {
