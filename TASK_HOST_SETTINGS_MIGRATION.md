@@ -82,7 +82,7 @@
 │         ├─ 按下 / 抬起震动卡、波形编辑器（复用现有组件）                                          │
 │         └─ 二级页：模块设置 / 调试与日志 / 帮助 / 关于                                           │
 │                                                                                              │
-│  数据：<host>/files/haostoo/{config/settings.json, config/haptic.json, config/ui.json, logs/}  │
+│  数据：<host>/files/haostoo/{config/state.json, config/legacy/, logs/}                        │
 └──────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -105,9 +105,15 @@ ksp("com.highcapable.yukihookapi:yukihook-compiler:1.5.0")
 
 // ModuleActivity 需要 AppCompat（core 已传递，显式声明锁定版本）
 implementation("androidx.appcompat:appcompat:1.7.1")
+
+// 配置序列化
+implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.9.0")   // 以当前最新稳定版为准
 ```
 
-- 在 `app/build.gradle.kts` 应用 KSP 插件（根项目 `plugins { id("com.google.devtools.ksp") version "<ksp>" apply false }`）。
+- 应用两个编译插件（根项目 `plugins { … apply false }`）：
+  - `com.google.devtools.ksp`（YukiHook 编译器需要）
+  - `org.jetbrains.kotlin.plugin.serialization`（版本与 Kotlin 一致，即 `2.4.10`）
+- 两者互不冲突：KSP 是符号处理，serialization 是编译器插件。
 - 移除不再使用的依赖：`io.github.libxposed:service`、`io.github.libxposed:interface`、`miuix-blur`、`navigation-compose`、`navigationevent-compose`、`coil-compose`（逐个 `grep` 确认零引用后再删）。
 - 保留：`miuix-ui`、`miuix-preference`、`miuix-icons`、`compose-bom`、`material3`、`compose-markdown`。
 - 传递依赖会带来 `kotlin-stdlib 2.4.21`，与本项目 Kotlin 2.4.10 同属 2.4 线，Gradle 取高版本即可；若编译报元数据版本错误，先升 Kotlin 到 2.4.21 再排查。
@@ -277,7 +283,7 @@ class SettingsActivity : BaseHostActivity() {
 ```
 
 - 页面视觉仍由 `MiuixTheme(colors = ...)` 决定，XML 主题只提供窗口基础（无 ActionBar、无标题）。
-- 深浅色由 `ui.json` 的 `color_mode` 驱动 Compose 配色，不依赖 `DayNight`。
+- 深浅色由 `state.json` 的 `ui.color_mode` 驱动 Compose 配色，不依赖 `DayNight`。
 
 ### 4.5 启动
 
@@ -302,62 +308,157 @@ object HostPaths {
     fun root(ctx: Context): File =
         File(ctx.getExternalFilesDir(null) ?: ctx.filesDir, ROOT).apply { mkdirs() }
     fun configDir(ctx: Context) = File(root(ctx), "config").apply { mkdirs() }
-    fun settings(ctx: Context) = File(configDir(ctx), "settings.json")
-    fun haptic(ctx: Context) = File(configDir(ctx), "haptic.json")
-    fun ui(ctx: Context) = File(configDir(ctx), "ui.json")
+    fun state(ctx: Context) = File(configDir(ctx), "state.json")   // 唯一配置快照
+    fun legacyDir(ctx: Context) = File(configDir(ctx), "legacy").apply { mkdirs() }
     fun logs(ctx: Context) = File(root(ctx), "logs").apply { mkdirs() }
 }
 ```
 
-最终位置：`/sdcard/Android/data/<host>/files/haostoo/…`；外部存储不可用时回退 `filesDir`。
+最终位置：`/sdcard/Android/data/<host>/files/haostoo/config/state.json`；外部存储不可用时回退 `filesDir`。
 
-### 5.2 格式
+### 5.2 单快照模型
 
-`settings.json`：
+设置、波形、UI 偏好合并在**一个文件**里，一次原子写即一次完整提交，不存在跨文件半提交。
 
-```json
-{"schema": 2, "revision": 1730000000000, "updated_at": 1730000000000,
- "down_mode": 1, "up_mode": 1, "down_system": 0, "up_system": 3,
- "down_duration": 50.0, "down_strength": 0.5,
- "up_duration": 50.0, "up_strength": 0.5,
- "theme_mode": 2, "debug_log": false}
+```kotlin
+@Serializable
+data class HostState(
+    val schema: Int = 3,
+    @SerialName("updated_at") val updatedAt: Long = 0,
+    val settings: VibrationSettings = VibrationSettings(),
+    val waveform: WaveformConfig? = null,
+    val ui: UiPrefs = UiPrefs(),
+)
+
+@Serializable
+data class VibrationSettings(
+    @SerialName("down_mode") val downMode: Int = 1,
+    @SerialName("up_mode") val upMode: Int = 1,
+    @SerialName("down_system") val downSystem: Int = 0,
+    @SerialName("up_system") val upSystem: Int = 3,
+    @SerialName("down_duration") val downDuration: Float = 50f,
+    @SerialName("down_strength") val downStrength: Float = 0.5f,
+    @SerialName("up_duration") val upDuration: Float = 50f,
+    @SerialName("up_strength") val upStrength: Float = 0.5f,
+    @SerialName("theme_mode") val themeMode: Int = 2,
+    @SerialName("debug_log") val debugLog: Boolean = false,
+)
+
+@Serializable
+data class WaveformConfig(
+    val down: WaveformHaptic? = null,
+    val up: WaveformHaptic? = null,
+)
+
+@Serializable
+data class WaveformHaptic(
+    val timings: List<Long>,
+    val amplitudes: List<Int>,
+)
+
+@Serializable
+data class UiPrefs(
+    @SerialName("fab_x") val fabX: Float = 0f,
+    @SerialName("fab_y") val fabY: Float = 0.62f,
+    @SerialName("color_mode") val colorMode: Int = 2,
+)
 ```
 
-`haptic.json`：`{"down":{"timings":[…],"amplitudes":[…]}, "up":{…}}`（沿用现有结构与校验规则：段数 2–8、`timings[0]==0`、时长 ≤500ms、强度 0–255、至少一段 >0ms）。
+文件示例：
 
-`ui.json`：`{"fab_x":0.0,"fab_y":0.62,"color_mode":2}`。
+```json
+{
+  "schema": 3,
+  "updated_at": 1730000000000,
+  "settings": {
+    "down_mode": 1, "up_mode": 1, "down_system": 0, "up_system": 3,
+    "down_duration": 50.0, "down_strength": 0.5,
+    "up_duration": 50.0, "up_strength": 0.5,
+    "theme_mode": 2, "debug_log": false
+  },
+  "waveform": {
+    "down": {"timings": [0, 40, 10, 10], "amplitudes": [0, 250, 0, 100]},
+    "up":   {"timings": [0, 40, 10, 10], "amplitudes": [0, 180, 0, 90]}
+  },
+  "ui": {"fab_x": 0.0, "fab_y": 0.62, "color_mode": 2}
+}
+```
+
+约定：
+
+- JSON 字段统一 **snake_case**（用 `@SerialName` 固定），Kotlin 属性用 camelCase。这样旧文件、导出文件、手改调试的键名保持一致。
+- 每个字段都有默认值 → 缺字段可读；`Json { ignoreUnknownKeys = true; encodeDefaults = true }` → 多字段可忽略、写盘时保留完整结构。
+- `schema` 标识结构版本；结构变更时自增并写迁移分支。
+- `updatedAt` 仅用于"文件变了没有"的判等与日志，**不再承担版本冲突语义**（单进程、单写者，无并发写）。
 
 ### 5.3 写入
 
-1. 写 `xxx.json.tmp`；
-2. `FileOutputStream(tmp, true).use { it.fd.sync() }`；
-3. 删旧文件 → `renameTo`（失败则 `copyTo` 后删临时文件）；
-4. 先写 `haptic.json`，再写 `settings.json`（后者携带 `revision`）。
+```kotlin
+private val writeMutex = Mutex()
 
-`revision = System.currentTimeMillis()`；整体版本取 `max(settings.revision, haptic.mtime)`。
+suspend fun update(transform: (HostState) -> HostState) = writeMutex.withLock {
+    val next = transform(current()).copy(updatedAt = System.currentTimeMillis())
+    val af = AtomicFile(HostPaths.state(context))
+    val out = af.startWrite()
+    try {
+        out.write(json.encodeToString(next).toByteArray())
+        af.finishWrite(out)
+    } catch (t: Throwable) {
+        af.failWrite(out)
+        throw t
+    }
+    _state.value = next
+}
+```
 
-### 5.4 热更新
+- 用 `androidx.core.util.AtomicFile`（`core-ktx` 已引入）：内部走临时文件 + `fsync` + `rename`，并维护备份，写入中断不会留下半截文件。
+- 所有写操作经 `SettingsStore.update`，外部不得直接 `File.writeText`；写用 `Mutex` 串行化。
+- UI 侧滑杆仍是 200ms 防抖后调 `update`，避免逐帧写盘。
 
-`SettingsStore` 在 Hook 侧对 `configDir` 挂 `FileObserver(CLOSE_WRITE or MOVED_TO)`：
+### 5.4 读取与热更新
 
-- 200ms 去抖；
-- `revision` 变化才重读；
-- 重读成功后原子替换 `HapticEngine.cachedSettings` / `cachedCustomHaptic`；
-- 解析失败保留上一份有效缓存并 `Log.w`；
-- `FileObserver` 用字段强引用持有。
+- 启动：`attach(context, host)` 读一次 → 解析 → 得到 `HostState` → 填充 `HapticEngine.cachedSettings` / `cachedCustomHaptic`。
+- 向 UI 暴露 `StateFlow<HostState>`，Compose 直接 `collectAsState()`，不再自己轮询文件。
+- `readExternal(host)`：只读地读一次另一个宿主的 `state.json`（不订阅、不写入），供宿主切换时查看。
+- Hook 侧监听 `FileObserver(configDir, CLOSE_WRITE or MOVED_TO)`，只处理 `state.json`：
+  - 200ms 去抖；
+  - `updatedAt` 与内存中的值相同则跳过（自写回环）；
+  - 重读成功后原子替换缓存；
+  - 解析失败保留上一份有效缓存，`Log.w("WETYPE_CFG", …)`；
+  - `FileObserver` 用字段强引用持有。
 
-UI 保存后**不要**直接改内存缓存，等文件监听生效（延迟 < 300ms），保证"文件是唯一权威源"。
+### 5.5 损坏与恢复
 
-### 5.5 首次迁移
+解析失败（截断、手改成非法 JSON、磁盘异常）时：
 
-`settings.json` 不存在时，按顺序取一次初始值并落盘：
+1. 把当前文件改名 `state.bad.<时间戳>.json` 留证，不直接覆盖；
+2. 尝试默认值继续运行；
+3. 写一条 `WETYPE_CFG` 日志说明已回退。
 
-1. 旧位置 `config/config.xml`（若存在，用 `LegacyConfigImporter` 解析）；
-2. 默认值（`SettingsModel.defaultSettings()`）。
+`AtomicFile` 已覆盖"写一半"的场景（崩溃后仍是上一份完整内容）；本节的兜底只针对"内容本身非法"。
 
-迁移只发生一次，之后不再读取任何其他来源。
+### 5.6 首次迁移
 
-### 5.6 日志
+`state.json` 不存在时，按顺序取一次初始值并落盘：
+
+1. 旧三件套 `config/{settings,haptic,ui}.json`（若存在）→ 合并读入；
+2. 旧 `config/config.xml`（若存在）→ `LegacyConfigImporter` 解析；
+3. 默认值（`HostState()`）。
+
+迁移成功后把旧文件移入 `config/legacy/`（保留一份，便于回滚），之后只读 `state.json`。
+
+### 5.7 导入导出
+
+复用 `HostState` 的序列化器，外层加信封：
+
+```json
+{"format": 1, "host": "com.tencent.wetype", "state": { … }}
+```
+
+- 导出即把当前 `HostState` 包进信封写出（SAF `CreateDocument`）；
+- 导入先校验 `format` 与 `schema`，再经 `SettingsStore.update` 落盘，不直接写文件。
+
+### 5.8 日志
 
 同进程，直接写文件：
 
@@ -379,10 +480,20 @@ UI 保存后**不要**直接改内存缓存，等文件监听生效（延迟 < 3
 @Composable
 fun SettingsApp() {
     val context = LocalContext.current
-    val host = context.packageName                      // 运行在宿主进程，天然是宿主
+    val host = context.packageName                    // 运行在宿主进程，天然是宿主
     var targetHost by remember { mutableStateOf(host) }
     var showHostPicker by remember { mutableStateOf(false) }
-    val dark = ModulePrefs.isDark(context, isSystemInDarkTheme())
+
+    // 当前宿主：订阅快照；其它宿主：一次性只读读取（可能失败）
+    val primary by SettingsStore.state.collectAsState()
+    val state = if (targetHost == host) primary else SettingsStore.readExternal(targetHost)
+    val readOnly = targetHost != host
+
+    val dark = when (state?.ui?.colorMode ?: 2) {     // 0 浅 1 深 2 跟随
+        0 -> false
+        1 -> true
+        else -> isSystemInDarkTheme()
+    }
 
     MiuixTheme(colors = if (dark) darkColorScheme() else lightColorScheme()) {
         Scaffold(topBar = {
@@ -394,6 +505,8 @@ fun SettingsApp() {
         }) { padding ->
             SettingsContent(
                 host = targetHost,
+                state = state,
+                readOnly = readOnly,
                 modifier = Modifier.padding(top = padding.calculateTopPadding()),
             )
         }
@@ -460,16 +573,17 @@ fun SettingsTopBar(hostName: String, onBack: (() -> Unit)?, onSwitchHost: () -> 
 ### 6.3 宿主切换
 
 - 点标题区 → `OverlayDialog` 列出两个宿主，当前项打钩。
-- 选择后只切换 `targetHost`，页面重新读取该宿主目录：
-  - 可读 → 正常展示与保存；
-  - 不可读（不同应用数据目录不可互访 / 目录不存在）→ 只读态，显示 `host_no_access_hint`，禁用保存；
-- 不做任何跨宿主数据复制或迁移。
+- 目标宿主为**当前进程所属宿主**时：正常读写（订阅 `StateFlow`，保存走 `update`）。
+- 目标宿主为**另一个宿主**时：`SettingsStore.readExternal(host)` 做一次性只读读取；
+  - 读到了 → 展示，但所有编辑控件禁用（只读）；
+  - 读不到（不同应用数据目录不可互访 / 未安装 / 文件不存在）→ 显示 `host_no_access_hint` 与空态；
+- 切换只是查看，**不写对方数据目录、不复制、不迁移**。自动识别本身基于 `packageName`，正常不会错，切换入口是给异常情况的兜底。
 
 ### 6.4 内容
 
 沿用现有卡片结构，只换数据源：
 
-1. 注入状态卡（进程内状态：Hook 是否装好、模块版本、当前 revision、最近心跳时间）；
+1. 注入状态卡（进程内状态：Hook 是否装好、模块版本、配置更新时间、最近心跳时间）；
 2. 按下震动卡：模式下拉 → 系统风格下拉 / 时长强度滑杆 / 曲线预览 + 「设置波形」 → 测试；
 3. 抬起震动卡：同上；
 4. 其他选项：恢复默认、重载输入法；
@@ -526,7 +640,7 @@ fun SettingsTopBar(hostName: String, onBack: (() -> Unit)?, onSwitchHost: () -> 
 | `injection_hook_missing` | 模块已加载，Hook 未安装 | Module loaded, hook not installed |
 | `injection_hook_missing_hint` | 输入法版本可能已变更，可通过日志反馈 | The IME version may have changed; report with logs |
 | `injection_ok` | Hook 已注入 | Hook injected |
-| `injection_ok_hint` | 当前生效配置 revision %1$d | Active config revision %1$d |
+| `injection_ok_hint` | 配置更新于 %1$s | Config updated %1$s |
 | `injection_heartbeat` | 最近心跳 %1$s · 模块 %2$s | Last heartbeat %1$s · module %2$s |
 | `title_down_vibration` | 按下震动 | Press vibration |
 | `title_up_vibration` | 抬起震动 | Release vibration |
@@ -646,24 +760,24 @@ fun SettingsTopBar(hostName: String, onBack: (() -> Unit)?, onSwitchHost: () -> 
 
 ### P1 — 配置落到宿主目录
 
-1. 新增 `HostPaths`、`SettingsStore`（读/写/迁移/`FileObserver`）。
-2. `RemoteConfig.kt` 改名 `SettingsModel.kt`，只保留数据模型 + 波形编解码；宿主常量与显示名移到 `HostCatalog`；**同步更新全项目引用**。
-3. `HookEntry` 中改为 `SettingsStore.attach(...)`；`HapticEngine` 缓存由它填充。
-4. FAB 位置与 `color_mode` 改写 `ui.json`。
+1. 新增 `HostPaths`、`SettingsStore`（单快照读写 / `AtomicFile` / `Mutex` / `StateFlow` / `FileObserver` / 迁移 / 损坏恢复）。
+2. `RemoteConfig.kt` 改名 `SettingsModel.kt`，改为 `@Serializable` 的 `HostState` / `VibrationSettings` / `WaveformConfig` / `UiPrefs`，保留波形校验；宿主常量与显示名移到 `HostCatalog`；**同步更新全项目引用**。
+3. `HookEntry` 中改为 `SettingsStore.attach(appContext, host)`；`HapticEngine` 缓存由它填充。
+4. FAB 位置与 `color_mode` 归入 `HostState.ui`，经 `SettingsStore.update` 落盘。
 
 **闸门**
 
-- [ ] 手工改 `settings.json`，1 秒内震动行为变化。
-- [ ] 改 `haptic.json` 同样生效。
+- [ ] 手工改 `state.json`（`settings` 与 `waveform` 各一次），1 秒内震动行为变化。
+- [ ] 写入过程中强杀宿主进程，重启后配置仍是完整的一份（不出现半截文件）。
 - [ ] 构造旧 `config.xml` 可迁移出正确数值。
-- [ ] 写入非法 JSON 时 Hook 不崩、保留旧缓存。
+- [ ] 把 `state.json` 改成非法 JSON：Hook 不崩、沿用旧缓存，坏文件被改名为 `state.bad.<ts>.json`。
 
 建议 commit：`feat(config): 配置改存宿主目录并支持文件热更新`
 
 ### P2 — 设置页 UI（含移除 launcher）
 
 1. `SettingsScreen.kt` → `SettingsContent(host, modifier, onOpenModuleSettings)`；数据源换 `SettingsStore`；删除同步状态提示；注入卡读进程内状态；删「复制到其他宿主」。
-2. 新增 `SettingsTopBar`、宿主选择弹层、只读态。
+2. 新增 `SettingsTopBar`、宿主选择弹层、非本宿主的只读态。
 3. `SettingsActivity` 从探针换成真实页面。
 4. **删除** `MainActivity.kt`、`App.kt`、`MainScreen.kt`、`HostSettingsActivity.kt`、`HostGrant.kt`；Manifest 删两个 `<activity>`。
 5. 模块级设置（颜色模式 / 导入导出 / 日志 / 帮助 / 关于）此阶段暂缺，P3 补回。
@@ -672,7 +786,7 @@ fun SettingsTopBar(hostName: String, onBack: (() -> Unit)?, onSwitchHost: () -> 
 
 - [ ] 桌面无图标；`resolve-activity` 查不到 launcher。
 - [ ] 四种震动模式、波形编辑、测试、恢复默认、重载输入法全部可用且即时生效。
-- [ ] 顶栏两行文本正确；点击可切换宿主；不可读时进入只读态并提示。
+- [ ] 顶栏两行文本正确；点击可切换宿主（只读查看）；不可读时给出提示。
 - [ ] 返回后再进入，配置一致、无重复保存。
 
 建议 commit：`feat(ui): 设置页在宿主内复用并移除独立入口`
@@ -727,10 +841,10 @@ fun SettingsTopBar(hostName: String, onBack: (() -> Unit)?, onSwitchHost: () -> 
 | `SettingsActivity.kt` | 宿主内设置页宿主容器（edge-to-edge、Compose） |
 | `SettingsTopBar.kt` | 标题 + 宿主副标题 + 点击切换 |
 | `HostPaths.kt` | 宿主目录路径 |
-| `SettingsStore.kt` | 配置读写 / 原子写 / 迁移 / `FileObserver` |
+| `SettingsStore.kt` | 单快照读写（`AtomicFile` + `Mutex`）/ `StateFlow` / `FileObserver` / `readExternal` 只读读取 / 迁移与损坏恢复 |
 | `HookRuntime.kt` | 进程内注入状态 |
 | `ModuleSettingsPage.kt` | 模块设置 / 调试 / 帮助 / 关于（可拆多文件） |
-| `SettingsModel.kt` | 设置与波形数据模型（`RemoteConfig.kt` 改名而来，只留模型 + 波形编解码） |
+| `SettingsModel.kt` | `@Serializable` 单快照模型（`HostState` / `VibrationSettings` / `WaveformConfig` / `UiPrefs`），含波形校验 |
 
 **改造**
 
@@ -741,7 +855,7 @@ fun SettingsTopBar(hostName: String, onBack: (() -> Unit)?, onSwitchHost: () -> 
 | `HapticEngine.kt` | 抽出 `dispatch(view, event)` |
 | `SettingsScreen.kt` | 数据源与顶栏改造 |
 | `WaveformEditor.kt` / `WaveformCurve.kt` | 仅替换文案引用 |
-| `HostFabInjector.kt` | 点击改跳转；位置写 `ui.json` |
+| `HostFabInjector.kt` | 点击改跳转；位置经 `SettingsStore` 写入 `HostState.ui` |
 | `DebugLog.kt` | 直写文件 |
 | `LogStore.kt` | 路径改宿主目录 |
 | `ConfigTransfer.kt` | 单宿主导入导出 |
@@ -761,7 +875,7 @@ fun SettingsTopBar(hostName: String, onBack: (() -> Unit)?, onSwitchHost: () -> 
 2. **不要**把资源包 ID 设为 `0x7f`。
 3. **不要**让非 `ModuleActivity` 子类作为设置页（注册机制不接管）。
 4. **不要**在宿主进程里用 `createPackageContext(模块包)` 取资源（包可见性会拒），模块资源已由框架注入。
-5. **不要**给配置引入第二个权威源（SharedPreferences / 云端 / 任何跨进程通道）；文件是唯一来源。
+5. **不要**给配置引入第二个权威源（SharedPreferences / 云端 / 任何跨进程通道）；`state.json` 是唯一来源，写入必须经 `SettingsStore.update`（`AtomicFile` + `Mutex`）。
 6. **不要**在 Hook 的触摸回调里做文件 IO、加锁或反射查找。
 7. **不要**用 `androidx.compose.ui.window.Dialog` 等自绘弹层替代 miuix `Overlay*`。
 8. **不要**开启热重载（设置页存活时会被框架拒绝）。
@@ -783,7 +897,7 @@ fun SettingsTopBar(hostName: String, onBack: (() -> Unit)?, onSwitchHost: () -> 
 
 **页面**
 - [ ] 顶栏两行（模块名 / 宿主名）；点击弹出宿主选择
-- [ ] 切换宿主：可读可编辑；不可读只读 + 提示；无跨宿主复制
+- [ ] 切换宿主：只读查看，不可读时给出提示；无跨宿主写入或复制
 - [ ] 四种模式、波形编辑、曲线交互、测试、恢复默认、重载输入法均可用
 - [ ] 模块设置 / 日志 / 帮助 / 关于可用
 - [ ] 深浅色切换正常，英文下无中文残留与文字溢出
@@ -807,7 +921,7 @@ fun SettingsTopBar(hostName: String, onBack: (() -> Unit)?, onSwitchHost: () -> 
 | 看 Activity 是否被接管 | 在 `SettingsActivity.onCreate` 打 `WETYPE_UI` 日志，含 `packageName` / `pid` |
 | 看配置 | `adb shell run-as <host> ls -l files/haostoo/config` 或 `adb shell ls /sdcard/Android/data/<host>/files/haostoo/config` |
 | 强制重注入 | `adb shell am force-stop <host>` 后切一次键盘 |
-| 验证热更新 | 改 `settings.json` 的 `down_strength`，立刻按键 |
+| 验证热更新 | 改 `state.json` 的 `settings.down_strength`，立刻按键 |
 
 日志 tag：`WETYPE_HOOK`（钩子）、`WETYPE_UI`（设置页）、`WETYPE_CFG`（配置读写/迁移）、`WETYPE_FAB`（入口按钮）。
 
@@ -826,4 +940,8 @@ adb install -r app/build/outputs/apk/release/app-universal-release.apk
 # 宿主 Activity 清单（选 proxy 用）
 adb shell dumpsys package com.tencent.wetype | sed -n '/Activities:/,/Providers:/p'
 adb shell dumpsys package com.bytedance.android.doubaoime | sed -n '/Activities:/,/Providers:/p'
+
+# 看配置快照
+adb shell ls /sdcard/Android/data/com.tencent.wetype/files/haostoo/config
+adb shell cat /sdcard/Android/data/com.tencent.wetype/files/haostoo/config/state.json
 ```

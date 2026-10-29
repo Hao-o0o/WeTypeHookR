@@ -44,8 +44,8 @@ WeTypeHookR/
 │       │   ├── HostCatalog.kt           # 宿主包名 / 显示名 / proxy / 版本查询
 │       │   ├── HapticEngine.kt          # ★ 震动执行 + 进程内缓存（无框架依赖）
 │       │   ├── HapticUtils.kt           # 系统震动常量映射
-│       │   ├── SettingsModel.kt         # SettingsState / 波形模型与校验
-│       │   ├── SettingsStore.kt         # ★ 宿主目录读写 + 原子写 + FileObserver
+│       │   ├── SettingsModel.kt         # @Serializable 单快照模型 + 波形校验
+│       │   ├── SettingsStore.kt         # ★ 单快照读写（AtomicFile）+ StateFlow + FileObserver
 │       │   ├── HostPaths.kt             # 宿主目录路径
 │       │   ├── HookRuntime.kt           # 进程内注入状态
 │       │   ├── BaseHostActivity.kt      # AppCompatActivity + ModuleActivity
@@ -91,6 +91,7 @@ WeTypeHookR/
 | `miuix-ui / preference / icons:0.9.3` | UI 组件 | implementation |
 | `compose-bom` + `material3` | Compose 基础 | implementation |
 | `compose-markdown:0.5.4` | 帮助文档渲染 | implementation |
+| `kotlinx-serialization-json:1.9.0` | 配置快照序列化 | implementation + `org.jetbrains.kotlin.plugin.serialization` |
 
 工具链：AGP `9.3.2`、Kotlin `2.4.10`、Gradle `9.5.0`、JDK 21、compileSdk 37 / targetSdk 35 / minSdk 33。
 
@@ -265,31 +266,49 @@ API 102 行为约束：模块不得调用 `de.robv.android.xposed` 遗留 API；
 
 ## 7. 配置契约
 
-### 7.1 位置
+### 7.1 单快照
+
+每个宿主只有**一个配置快照**：`state.json`。设置、波形、UI 偏好同在一个对象里，一次原子写即一次完整提交，不存在跨文件半提交，也不需要版本冲突语义（单进程、单写者）。
 
 ```
-<host>/files/haostoo/config/settings.json    # 设置 + revision
-<host>/files/haostoo/config/haptic.json      # 波形
-<host>/files/haostoo/config/ui.json          # FAB 位置 + 颜色模式
+<host>/files/haostoo/config/state.json       # 唯一配置快照
+<host>/files/haostoo/config/legacy/          # 迁移前的旧文件（只读留档）
 <host>/files/haostoo/logs/<category>.log     # 日志
 ```
 
 优先 `getExternalFilesDir(null)`（`/sdcard/Android/data/<host>/files/haostoo/`），为空时回退 `filesDir`。路径只允许由 `HostPaths` 提供。
 
-### 7.2 字段
+### 7.2 结构
 
-| 键 | 类型 | 含义 |
-| --- | --- | --- |
-| `schema` | int | 当前 2 |
-| `revision` / `updated_at` | long | 提交版本 / 时间戳 |
-| `down_mode` / `up_mode` | int | 0 无 / 1 系统预设 / 2 简单自定义 / 3 自定义波形 |
-| `down_system` / `up_system` | int | 系统预设下标 0–19 |
-| `down_duration` / `up_duration` | float | 毫秒（10–200） |
-| `down_strength` / `up_strength` | float | 0–1 |
-| `theme_mode` | int | 历史字段，保留兼容 |
-| `debug_log` | bool | 调试日志开关 |
+```kotlin
+@Serializable
+data class HostState(
+    val schema: Int = 3,
+    @SerialName("updated_at") val updatedAt: Long = 0,
+    val settings: VibrationSettings = VibrationSettings(),
+    val waveform: WaveformConfig? = null,
+    val ui: UiPrefs = UiPrefs(),
+)
+```
 
-`ui.json`：`fab_x` / `fab_y`（0–1 归一化）、`color_mode`（0 浅 / 1 深 / 2 跟随）。
+| 分组 | 键（snake_case） | 类型 | 含义 |
+| --- | --- | --- | --- |
+| 顶层 | `schema` / `updated_at` | int / long | 结构版本（当前 3）/ 最后写入时间 |
+| `settings` | `down_mode` / `up_mode` | int | 0 无 / 1 系统预设 / 2 简单自定义 / 3 自定义波形 |
+| `settings` | `down_system` / `up_system` | int | 系统预设下标 0–19 |
+| `settings` | `down_duration` / `up_duration` | float | 毫秒（10–200） |
+| `settings` | `down_strength` / `up_strength` | float | 0–1 |
+| `settings` | `theme_mode` | int | 历史字段，保留兼容 |
+| `settings` | `debug_log` | bool | 调试日志开关 |
+| `waveform` | `down` / `up` | object | `{timings:[…], amplitudes:[…]}`，可为 null |
+| `ui` | `fab_x` / `fab_y` | float | FAB 归一化位置 0–1 |
+| `ui` | `color_mode` | int | 0 浅 / 1 深 / 2 跟随 |
+
+序列化约定：
+
+- JSON 键用 snake_case，通过 `@SerialName` 固定；Kotlin 属性用 camelCase。
+- 所有字段带默认值；`Json { ignoreUnknownKeys = true; encodeDefaults = true }`。
+- `schema` 变更时自增并写迁移分支；未知字段忽略、缺失字段取默认，保证前后兼容。
 
 ### 7.3 波形规则
 
@@ -297,15 +316,40 @@ API 102 行为约束：模块不得调用 `de.robv.android.xposed` 遗留 API；
 - `timings[0]` 必须为 `0`（编辑器只读）；
 - 时长 0–500ms，强度 0–255；
 - 至少一段时长 > 0；
-- 非法 JSON 不覆盖上一份有效缓存。
+- 非法内容不覆盖上一份有效缓存。
 
-### 7.4 写入与热更新
+### 7.4 写入
 
-写入顺序：临时文件 → `fd.sync()` → `rename`；先 `haptic.json` 后 `settings.json`。
+```kotlin
+suspend fun update(transform: (HostState) -> HostState) = mutex.withLock {
+    val next = transform(state.value).copy(updatedAt = System.currentTimeMillis())
+    val file = AtomicFile(HostPaths.state(context))
+    val out = file.startWrite()
+    try { out.write(json.encodeToString(next).toByteArray()); file.finishWrite(out) }
+    catch (t: Throwable) { file.failWrite(out); throw t }
+    _state.value = next
+}
+```
 
-`FileObserver(CLOSE_WRITE or MOVED_TO)` + 200ms 去抖 + `revision` 比对 → 重读 → 原子替换内存缓存。UI 保存后不直接改缓存。
+- `androidx.core.util.AtomicFile`：临时文件 + `fsync` + `rename`，写入中断不会留下半截文件。
+- 写入必须经 `SettingsStore.update`（`Mutex` 串行化），外部不得直接写文件。
+- UI 滑杆 200ms 防抖后再提交，避免逐帧写盘。
 
-首次运行若无 `settings.json`，从旧 `config/config.xml` 迁移一次，失败则用默认值。
+### 7.5 读取与热更新
+
+- 启动：`attach()` 读一次 → 解析 → 填充 `HapticEngine` 缓存。
+- UI：订阅 `StateFlow<HostState>`，`collectAsState()` 驱动界面；`readExternal(host)` 用于只读查看另一个宿主。
+- Hook：`FileObserver(configDir, CLOSE_WRITE or MOVED_TO)` 只处理 `state.json`，200ms 去抖，`updatedAt` 相同则跳过，重读后原子替换缓存；解析失败保留旧缓存并记 `WETYPE_CFG`。
+- UI 保存后不直接改 Hook 缓存，以文件为准（生效延迟 < 300ms）。
+
+### 7.6 迁移与恢复
+
+- 首次无 `state.json`：旧三件套（`settings/haptic/ui.json`）→ 旧 `config.xml` → 默认值，三者取其一，写入后把旧文件移入 `legacy/`。
+- 内容非法（截断、手改坏）：重命名为 `state.bad.<ts>.json` 留证，回退默认值，记日志，不静默覆盖。
+
+### 7.7 导入导出
+
+复用 `HostState` 序列化器，外层信封 `{ "format": 1, "host": "...", "state": { … } }`。导出写文件，导入校验 `format`/`schema` 后经 `SettingsStore.update` 落盘。
 
 ---
 
@@ -313,7 +357,7 @@ API 102 行为约束：模块不得调用 `de.robv.android.xposed` 遗留 API；
 
 ### 8.1 主题
 
-- `MiuixTheme(colors = if (dark) darkColorScheme() else lightColorScheme())`，`dark` 由 `ui.json` 的 `color_mode` 决定，与系统深色解耦。
+- `MiuixTheme(colors = if (dark) darkColorScheme() else lightColorScheme())`，`dark` 由 `state.json` 的 `ui.color_mode` 决定，与系统深色解耦。
 - XML 主题 `Theme.WeTypeHookR` 只负责窗口（AppCompat、无 ActionBar、透明背景）。
 - 颜色只用 `MiuixTheme.colorScheme.*`：`surface`、`surfaceContainer`、`primary`、`onSurface`、`onSurfaceContainerVariant`、`secondaryContainer`、`dividerLine`。
 - 文本样式用 `MiuixTheme.textStyles.*`（`headline2`、`body1/body2`、`footnote1`、`subtitle`）。
@@ -395,7 +439,7 @@ adb logcat -s YukiHook WETYPE_HOOK WETYPE_UI WETYPE_CFG WETYPE_FAB
 | 点 FAB 没反应 | `WETYPE_FAB` 日志；proxy 是否存在且 `standard`；`registerModuleActivities` 是否在 `withApplicationReady` 内调用 |
 | 页面起来但白屏/崩溃 | `WETYPE_UI` 日志；`moduleTheme` 是否为 AppCompat 主题；资源包 ID 是否冲突 |
 | 文字显示成资源 id 或缺失 | 资源包 ID / 注入是否成功；是否误用了宿主的 `R` |
-| 改设置不生效 | `WETYPE_CFG` 是否收到文件事件；`revision` 是否变化 |
+| 改设置不生效 | `WETYPE_CFG` 是否收到文件事件；`updatedAt` 是否变化 |
 | 打字无震动 | 钩子是否装上（`WETYPE_HOOK`）；是否被 `runCatching` 吞掉异常后未记录 |
 
 ---
@@ -406,7 +450,7 @@ adb logcat -s YukiHook WETYPE_HOOK WETYPE_UI WETYPE_CFG WETYPE_FAB
 2. 不得手写 `META-INF/xposed/*`；入口与元数据由 KSP 生成。
 3. 资源包 ID 不得为 `0x7f`。
 4. 设置页必须是 `ModuleActivity` 子类，且三个生命周期方法与 `getClassLoader()` 都委托给 `delegate`。
-5. 配置只有一个权威源：宿主目录文件。不得引入 SharedPreferences、跨进程通道或其他副本。
+5. 配置只有一个权威源：宿主目录下的 `state.json`。不得引入 SharedPreferences、跨进程通道或其他副本；写入必须经 `SettingsStore.update`（`AtomicFile` + `Mutex`），不得直接写文件。
 6. Hook 回调不做 IO、不加锁、不反射查找。
 7. 弹层只用 miuix `Overlay*`，且必须在 `Scaffold` 子树内。
 8. 文案只在 `res/values*/strings.xml` 与 `arrays.xml`；`.kt` 中不出现中文字面量。
@@ -422,7 +466,7 @@ adb logcat -s YukiHook WETYPE_HOOK WETYPE_UI WETYPE_CFG WETYPE_FAB
 | --- | --- |
 | 入口唯一 | FAB 注入失败则无法进入设置，只能等宿主适配；失败时有 Toast 提示 |
 | 任务栈 | 宿主内 Activity 会多一条 Recent 记录，显示为输入法自身 |
-| 跨宿主切换 | 不同应用的数据目录不可互访，切到另一宿主通常为只读态 |
+| 跨宿主切换 | 仅只读查看；不同应用的数据目录不可互访，读不到时给出提示 |
 | 热重载 | 关闭；更新模块需重载输入法 |
 | 微信输入法 3.5.3+ | 简单自定义 / 自定义波形震感偏弱，属系统侧限制，建议用系统预设 |
 | 资源 ID | 与其他模块共用 `0x64` 会冲突，需要时改段 |
