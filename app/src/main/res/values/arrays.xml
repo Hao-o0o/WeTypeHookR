@@ -36,4 +36,12 @@
         <item>深色</item>
         <item>跟随系统</item>
     </string-array>
+    <string-array name="help_lines">
+        <item>入口：在输入法设置页点击侧边圆形按钮打开本页。</item>
+        <item>配置按宿主隔离，保存在该宿主的 files/haostoo/config/state.json，改动即时生效。</item>
+        <item>四种模式：无震动、系统预设风格、简单自定义（时长 + 强度）、自定义波形。</item>
+        <item>自定义波形支持 2~8 段：首段时长固定为 0，单段时长 0~500ms，强度 0~255，至少一段大于 0ms。</item>
+        <item>曲线仅作预览，实际震动按离散的时长与强度数值执行。</item>
+        <item>点击顶栏标题区可切换查看另一个宿主，对方目录不可读时仅显示提示。</item>
+    </string-array>
 </resources>

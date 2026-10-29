@@ -1,5 +1,6 @@
 package com.haostoo.wetypehookr
 
+import android.app.Activity
 import android.widget.Toast
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
@@ -18,6 +19,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
@@ -36,26 +38,28 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.res.stringArrayResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.Icon
-import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.ScrollBehavior
 import top.yukonga.miuix.kmp.basic.Slider
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextButton
-import top.yukonga.miuix.kmp.basic.TopAppBar
 import top.yukonga.miuix.kmp.icon.MiuixIcons
-import top.yukonga.miuix.kmp.icon.extended.Back
 import top.yukonga.miuix.kmp.icon.extended.Play
 import top.yukonga.miuix.kmp.icon.extended.Refresh
 import top.yukonga.miuix.kmp.icon.extended.Reset
+import top.yukonga.miuix.kmp.icon.extended.Settings
 import top.yukonga.miuix.kmp.icon.extended.Tune
 import top.yukonga.miuix.kmp.overlay.OverlayDialog
 import top.yukonga.miuix.kmp.preference.ArrowPreference
@@ -63,237 +67,285 @@ import top.yukonga.miuix.kmp.preference.OverlayDropdownPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.theme.darkColorScheme
 import top.yukonga.miuix.kmp.theme.lightColorScheme
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.withContext
 
-private val MODE_NAMES = listOf("无震动", "系统预设风格", "简单自定义", "自定义波形")
-private val SYSTEM_HAPTICS = listOf(
-    "Virtual Key", "Virtual Key Release",
-    "Keyboard Tap", "Keyboard Press", "Keyboard Release",
-    "Long Press", "Context Click", "Confirm", "Reject",
-    "Clock Tick",
-    "Gesture Start", "Gesture End", "Gesture Threshold Activate", "Gesture Threshold Deactivate",
-    "Drag Start",
-    "Text Handle Move",
-    "Segment Tick", "Segment Frequent Tick",
-    "Toggle On", "Toggle Off",
-)
+/** 页面内的一级 / 二级页；全部在同一个 Scaffold 内切换。 */
+private enum class Page { Main, Waveform, Module, Debug, Help, About }
 
 /**
- * 宿主设置详情：二级页面，带返回顶栏，不含根底栏。
- * 顺序：按下震动（模式 → [系统/滑块] → 自定义波形时显示曲线预览与设置波形 → 测试）→ 抬起震动（同）→ 其他选项。
+ * 设置页根组件。
+ *
+ * 运行在宿主进程内：`packageName` 天然是宿主，配置读写直接落宿主目录。
+ * 顶栏标题区可点，切换查看另一个宿主的配置（只读，不跨宿主写入）。
  */
 @Composable
-fun HostSettingsScreen(hostPackage: String, onBack: () -> Unit) {
+fun SettingsApp() {
     val context = LocalContext.current
-    val hostState by SettingsStore.state.collectAsState()
+    val primaryHost = context.packageName
+    val primary by SettingsStore.state.collectAsState()
 
-    var state by remember(hostPackage) { mutableStateOf<SettingsModel.SettingsState?>(null) }
-    var waveformConfig by remember(hostPackage) { mutableStateOf<SettingsModel.CustomHapticConfig?>(null) }
-    var pendingSave by remember(hostPackage) { mutableStateOf<SettingsModel.SettingsState?>(null) }
+    var targetHost by remember { mutableStateOf(primaryHost) }
+    var showHostPicker by remember { mutableStateOf(false) }
+    var external by remember { mutableStateOf<SettingsModel.HostState?>(null) }
+    var externalChecked by remember { mutableStateOf(false) }
+
+    val readOnly = targetHost != primaryHost
+
+    LaunchedEffect(targetHost) {
+        if (targetHost == primaryHost) {
+            externalChecked = false
+            external = null
+            return@LaunchedEffect
+        }
+        external = withContext(Dispatchers.IO) { SettingsStore.readExternal(targetHost) }
+        externalChecked = true
+    }
+
+    val state = if (readOnly) external else primary
+    val dark = when (state?.ui?.colorMode ?: 2) {
+        0 -> false
+        1 -> true
+        else -> isSystemInDarkTheme()
+    }
+
+    MiuixTheme(colors = if (dark) darkColorScheme() else lightColorScheme()) {
+        SettingsScaffold(
+            host = targetHost,
+            state = state,
+            readOnly = readOnly,
+            loaded = !readOnly || externalChecked,
+            onSwitchHost = { showHostPicker = true },
+            onBack = { (context as? Activity)?.finish() },
+            hostPicker = {
+                HostPickerDialog(
+                    show = showHostPicker,
+                    current = targetHost,
+                    primaryHost = primaryHost,
+                    onDismiss = { showHostPicker = false },
+                    onSelect = {
+                        targetHost = it
+                        showHostPicker = false
+                    },
+                )
+            },
+        )
+    }
+}
+
+@Composable
+private fun SettingsScaffold(
+    host: String,
+    state: SettingsModel.HostState?,
+    readOnly: Boolean,
+    loaded: Boolean,
+    onSwitchHost: () -> Unit,
+    onBack: () -> Unit,
+    hostPicker: @Composable () -> Unit,
+) {
+    val context = LocalContext.current
+    var page by remember { mutableStateOf(Page.Main) }
     var editingDown by remember { mutableStateOf<Boolean?>(null) }
     var activeDraft by remember { mutableStateOf<WaveDraft?>(null) }
-    var waveformWarning by remember { mutableStateOf<String?>(null) }
+    var draftWarning by remember { mutableStateOf(false) }
     var showResetDialog by remember { mutableStateOf(false) }
-    var hostVersion by remember(hostPackage) { mutableStateOf<String?>(null) }
+    var pendingSave by remember { mutableStateOf<SettingsModel.SettingsState?>(null) }
 
-    LaunchedEffect(hostPackage) {
-        withContext(Dispatchers.IO) { hostVersion = HostInfo.versionText(context, hostPackage) }
-    }
+    val scrollBehavior = MiuixScrollBehavior()
+    val draft = activeDraft
 
-    // 快照变化回流到 UI；拖动期间有未落盘的本地状态时不覆盖，避免滑块跳动。
-    LaunchedEffect(hostState) {
-        if (pendingSave == null) {
-            state = hostState.settings
-            waveformConfig = hostState.waveform
-        }
-    }
+    fun toast(message: String) = Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
 
-    // 注入状态直接读进程内状态：同进程、无心跳文件、无延迟。
-    val hookStatus = HookRuntime.status()
+    val failedText = stringResource(R.string.waveform_save_failed)
+    val legacyWarn = stringResource(R.string.waveform_legacy_warn)
+    val resetDone = stringResource(R.string.reset_done)
+    val invalidText = stringResource(R.string.waveform_invalid)
+    val downLabel = stringResource(R.string.label_down)
+    val upLabel = stringResource(R.string.label_up)
 
-    // 拖动/连续点击期间只更新本地状态，停止操作 250ms 后自动保存（避免逐帧 Binder / 文件 IO）。
+    // 滑杆 / 连续点击：本地先更新，停手 250ms 后落一次盘。
     LaunchedEffect(pendingSave) {
-        val s = pendingSave ?: return@LaunchedEffect
+        val next = pendingSave ?: return@LaunchedEffect
         delay(250)
         withContext(Dispatchers.IO) {
-            SettingsStore.update(context, hostPackage) { it.copy(settings = s) }
+            SettingsStore.update(context, host) { it.copy(settings = next) }
         }
         pendingSave = null
     }
 
-    // 未等到防抖就离开页面时补一次落盘，避免最后一次改动丢失。
-    val latestState by rememberUpdatedState(state)
-    DisposableEffect(hostPackage) {
+    // 未等到防抖就离开页面时补一次落盘。
+    val latestPending by rememberUpdatedState(pendingSave)
+    DisposableEffect(host) {
         onDispose {
-            if (pendingSave != null) {
-                latestState?.let { pending ->
-                    SettingsStore.update(context, hostPackage) { it.copy(settings = pending) }
-                }
+            latestPending?.let { next ->
+                SettingsStore.update(context, host) { it.copy(settings = next) }
             }
         }
     }
 
-    fun toast(msg: String) = Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
-
-    fun persist(newState: SettingsModel.SettingsState) {
-        state = newState
-        pendingSave = newState
+    fun persistSettings(next: SettingsModel.SettingsState) {
+        if (readOnly) return
+        pendingSave = next
     }
 
     fun saveWaveform(isDown: Boolean, wave: SettingsModel.WaveformHaptic) {
-        val base = waveformConfig ?: SettingsModel.defaultCustomHaptic()
+        if (readOnly) return
+        val base = state?.waveform ?: SettingsModel.defaultCustomHaptic()
         val merged = if (isDown) base.copy(down = wave) else base.copy(up = wave)
-        val saved = SettingsStore.update(context, hostPackage) { it.copy(waveform = merged) }
-        if (!saved) {
-            toast("波形保存失败")
+        if (!SettingsStore.update(context, host) { it.copy(waveform = merged) }) {
+            toast(failedText)
             return
         }
-        waveformConfig = merged
         editingDown = null
-        toast("${if (isDown) "按下" else "抬起"}波形已保存")
+        activeDraft = null
+        page = Page.Main
+        toast(context.getString(R.string.waveform_saved, if (isDown) downLabel else upLabel))
     }
 
     fun openWaveformEditor(isDown: Boolean) {
-        val existing = if (isDown) waveformConfig?.down else waveformConfig?.up
-        val editable = isEditableWaveform(existing)
-        waveformWarning = if (existing != null && !editable) {
-            "检测到历史波形数据长度或数组不一致，已载入默认波形草稿；保存后将按当前数量规范化。"
-        } else {
-            null
-        }
+        val existing = if (isDown) state?.waveform?.down else state?.waveform?.up
+        val editable = SettingsModel.isValidWaveform(existing)
+        draftWarning = existing != null && !editable
         val fallback = SettingsModel.defaultCustomHaptic()
-        val src = if (editable) existing!! else if (isDown) fallback.down!! else fallback.up!!
-        activeDraft = WaveDraft(src.timings.map { it.toInt() }, src.amplitudes.toList())
+        val source = if (editable) existing!! else if (isDown) fallback.down!! else fallback.up!!
+        activeDraft = WaveDraft(source.timings.map { it.toInt() }, source.amplitudes)
         editingDown = isDown
+        page = Page.Waveform
     }
 
-    fun saveDraft(isDown: Boolean) {
-        val d = activeDraft ?: return
-        val built = d.build()
-        if (built == null) {
-            toast(d.validate() ?: "波形数据不合法")
-            return
-        }
-        saveWaveform(isDown, built)
+    val titleOverride = when (page) {
+        Page.Main -> null
+        Page.Waveform -> stringResource(
+            if (editingDown == true) R.string.title_down_waveform else R.string.title_up_waveform,
+        )
+        Page.Module -> stringResource(R.string.title_module_settings)
+        Page.Debug -> stringResource(R.string.title_debug_logs)
+        Page.Help -> stringResource(R.string.title_help)
+        Page.About -> stringResource(R.string.title_about)
     }
 
-    fun resetToDefault() {
-        SettingsStore.update(context, hostPackage) {
-            it.copy(
-                settings = SettingsModel.defaultSettings(),
-                waveform = SettingsModel.defaultCustomHaptic(),
-            )
-        }
-        state = SettingsModel.defaultSettings()
-        waveformConfig = SettingsModel.defaultCustomHaptic()
-        toast("已恢复默认配置")
-    }
-
-    fun reloadHost() {
-        HapticEngine.killHost(context, hostPackage) { message ->
-            Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
-        }
-    }
-
-    val dark = hostState.ui.colorMode.let {
-        if (it == 0) false else if (it == 1) true else isSystemInDarkTheme()
-    }
-    val scrollBehavior = MiuixScrollBehavior()
-    val draft = activeDraft
-    val editDown = editingDown
-
-    MiuixTheme(colors = if (dark) darkColorScheme() else lightColorScheme()) {
-        Scaffold(
-            topBar = {
-                SettingsTopBar(
-                    subtitle = stringResource(HostCatalog.labelRes(hostPackage)),
-                    onBack = {
-                        if (editDown != null) {
-                            editingDown = null
-                            activeDraft = null
-                        } else {
-                            onBack()
-                        }
-                    },
-                )
-            },
-        ) { padding ->
-            val s = state
-            val isEditing = editDown != null && draft != null
-            AnimatedContent(
-                targetState = isEditing,
-                transitionSpec = {
-                    if (targetState) {
-                        (slideInHorizontally(tween(300)) { it } + fadeIn(tween(220))) togetherWith
-                            (slideOutHorizontally(tween(300)) { -it / 5 } + fadeOut(tween(220)))
+    Scaffold(
+        topBar = {
+            SettingsTopBar(
+                subtitle = stringResource(HostCatalog.labelRes(host)),
+                onBack = {
+                    if (page == Page.Main) {
+                        onBack()
                     } else {
-                        (slideInHorizontally(tween(300)) { -it / 5 } + fadeIn(tween(220))) togetherWith
-                            (slideOutHorizontally(tween(300)) { it } + fadeOut(tween(220)))
+                        page = Page.Main
+                        editingDown = null
+                        activeDraft = null
                     }
                 },
-                label = "host-detail-screen",
-            ) { editing ->
-                if (editing && editDown != null && draft != null) {
-                    WaveformEditorContent(
-                        isDown = editDown,
-                        draft = draft,
-                        warning = waveformWarning,
-                        onCancel = { editingDown = null },
-                        onSave = { saveDraft(editDown) },
-                        modifier = Modifier
-                            .padding(padding)
-                            .fillMaxSize(),
-                    )
-                } else if (s == null) {
-                    Column(
-                        modifier = Modifier
-                            .padding(padding)
-                            .fillMaxSize()
-                            .padding(16.dp),
-                    ) {
-                        Text(
-                            text = "加载中…",
-                            color = MiuixTheme.colorScheme.onSurfaceContainerVariant,
-                            fontSize = 14.sp,
+                onSwitchHost = onSwitchHost,
+                titleOverride = titleOverride,
+            )
+        },
+    ) { padding ->
+        AnimatedContent(
+            targetState = page,
+            transitionSpec = {
+                if (targetState != Page.Main) {
+                    (slideInHorizontally(tween(300)) { it } + fadeIn(tween(220))) togetherWith
+                        (slideOutHorizontally(tween(300)) { -it / 5 } + fadeOut(tween(220)))
+                } else {
+                    (slideInHorizontally(tween(300)) { -it / 5 } + fadeIn(tween(220))) togetherWith
+                        (slideOutHorizontally(tween(300)) { it } + fadeOut(tween(220)))
+                }
+            },
+            label = "settings-page",
+        ) { current ->
+            val contentModifier = Modifier
+                .padding(top = padding.calculateTopPadding())
+                .fillMaxSize()
+
+            when (current) {
+                Page.Main -> MainContent(
+                    host = host,
+                    state = state,
+                    readOnly = readOnly,
+                    loaded = loaded,
+                    scrollBehavior = scrollBehavior,
+                    onSettingsChange = ::persistSettings,
+                    onOpenWaveformEditor = { isDown -> openWaveformEditor(isDown) },
+                    onReset = { showResetDialog = true },
+                    onOpenModuleSettings = { page = Page.Module },
+                    modifier = contentModifier,
+                )
+
+                Page.Waveform -> {
+                    if (editingDown != null && draft != null) {
+                        val errorText = waveErrorText(draft.validate())
+                        WaveformEditorContent(
+                            isDown = editingDown == true,
+                            draft = draft,
+                            warning = if (draftWarning) legacyWarn else null,
+                            onCancel = {
+                                page = Page.Main
+                                editingDown = null
+                                activeDraft = null
+                            },
+                            onSave = {
+                                val built = draft.build()
+                                if (built == null) {
+                                    toast(errorText.ifBlank { invalidText })
+                                } else {
+                                    saveWaveform(editingDown == true, built)
+                                }
+                            },
+                            modifier = contentModifier,
                         )
                     }
-                } else {
-                    HostDetailContent(
-                        state = s,
-                        onStateChange = ::persist,
-                        waveformConfig = waveformConfig,
-                        onOpenWaveformEditor = { isDown -> openWaveformEditor(isDown) },
-                        onReset = { showResetDialog = true },
-                        onReload = { reloadHost() },
-                        hostPackage = hostPackage,
-                        hostVersion = hostVersion,
-                        hookStatus = hookStatus,
-                        scrollBehavior = scrollBehavior,
-                        modifier = Modifier
-                            .padding(padding)
-                            .fillMaxSize(),
-                    )
                 }
+
+                Page.Module -> ModuleSettingsPage(
+                    state = state,
+                    readOnly = readOnly,
+                    scrollBehavior = scrollBehavior,
+                    onOpenDebug = { page = Page.Debug },
+                    onOpenHelp = { page = Page.Help },
+                    onOpenAbout = { page = Page.About },
+                    modifier = contentModifier,
+                )
+
+                Page.Debug -> DebugPage(
+                    state = state,
+                    readOnly = readOnly,
+                    scrollBehavior = scrollBehavior,
+                    onSettingsChange = ::persistSettings,
+                    modifier = contentModifier,
+                )
+
+                Page.Help -> HelpPage(modifier = contentModifier)
+                Page.About -> AboutPage(modifier = contentModifier)
             }
         }
 
+        hostPicker()
+
         if (showResetDialog) {
             OverlayDialog(
-                title = "恢复默认配置",
-                summary = "将当前宿主的震动设置与自定义波形恢复为默认值？",
+                title = stringResource(R.string.action_reset_default),
+                summary = stringResource(R.string.reset_confirm_message),
                 show = true,
                 onDismissRequest = { showResetDialog = false },
             ) {
                 Row(horizontalArrangement = Arrangement.SpaceBetween) {
-                    TextButton(text = "取消", onClick = { showResetDialog = false }, modifier = Modifier.weight(1f))
+                    TextButton(
+                        text = stringResource(R.string.action_cancel),
+                        onClick = { showResetDialog = false },
+                        modifier = Modifier.weight(1f),
+                    )
                     Spacer(Modifier.width(20.dp))
                     TextButton(
-                        text = "确认",
+                        text = stringResource(R.string.action_confirm),
                         onClick = {
                             showResetDialog = false
-                            resetToDefault()
+                            SettingsStore.update(context, host) {
+                                it.copy(
+                                    settings = SettingsModel.defaultSettings(),
+                                    waveform = SettingsModel.defaultCustomHaptic(),
+                                )
+                            }
+                            toast(resetDone)
                         },
                         modifier = Modifier.weight(1f),
                         colors = ButtonDefaults.textButtonColorsPrimary(),
@@ -305,19 +357,50 @@ fun HostSettingsScreen(hostPackage: String, onBack: () -> Unit) {
 }
 
 @Composable
-private fun HostDetailContent(
-    state: SettingsModel.SettingsState,
-    onStateChange: (SettingsModel.SettingsState) -> Unit,
-    waveformConfig: SettingsModel.CustomHapticConfig?,
+private fun MainContent(
+    host: String,
+    state: SettingsModel.HostState?,
+    readOnly: Boolean,
+    loaded: Boolean,
+    scrollBehavior: ScrollBehavior,
+    onSettingsChange: (SettingsModel.SettingsState) -> Unit,
     onOpenWaveformEditor: (Boolean) -> Unit,
     onReset: () -> Unit,
-    onReload: () -> Unit,
-    hostPackage: String,
-    hostVersion: String?,
-    hookStatus: SettingsModel.HookStatus?,
-    scrollBehavior: ScrollBehavior,
+    onOpenModuleSettings: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val context = LocalContext.current
+    var hostVersion by remember(host) { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(host) {
+        withContext(Dispatchers.IO) { hostVersion = HostInfo.versionText(context, host) }
+    }
+
+    if (!loaded) {
+        Column(modifier.padding(16.dp)) {
+            Text(
+                text = stringResource(R.string.state_loading),
+                color = MiuixTheme.colorScheme.onSurfaceContainerVariant,
+                fontSize = 14.sp,
+            )
+        }
+        return
+    }
+
+    if (state == null) {
+        Column(modifier.padding(16.dp)) {
+            Card(modifier = Modifier.fillMaxWidth(), insideMargin = PaddingValues(0.dp)) {
+                Text(
+                    text = stringResource(R.string.host_no_access_hint),
+                    fontSize = 13.sp,
+                    color = MiuixTheme.colorScheme.onSurfaceContainerVariant,
+                    modifier = Modifier.padding(16.dp),
+                )
+            }
+        }
+        return
+    }
+
     Column(
         modifier = modifier
             .nestedScroll(scrollBehavior.nestedScrollConnection)
@@ -325,52 +408,82 @@ private fun HostDetailContent(
             .padding(horizontal = 12.dp),
     ) {
         Spacer(Modifier.height(12.dp))
-        HostIdentityCard(hostPackage = hostPackage, hostVersion = hostVersion)
+        HostIdentityCard(host = host, hostVersion = hostVersion, readOnly = readOnly)
         Spacer(Modifier.height(12.dp))
-        InjectionCard(hookStatus = hookStatus)
+        InjectionCard(hookStatus = if (readOnly) null else HookRuntime.status())
         Spacer(Modifier.height(12.dp))
         VibrationCard(
             isDown = true,
-            state = state,
-            onStateChange = onStateChange,
-            waveform = waveformConfig?.down,
+            state = state.settings,
+            readOnly = readOnly,
+            waveform = state.waveform?.down,
+            onStateChange = onSettingsChange,
             onOpenWaveformEditor = { onOpenWaveformEditor(true) },
         )
         Spacer(Modifier.height(12.dp))
         VibrationCard(
             isDown = false,
-            state = state,
-            onStateChange = onStateChange,
-            waveform = waveformConfig?.up,
+            state = state.settings,
+            readOnly = readOnly,
+            waveform = state.waveform?.up,
+            onStateChange = onSettingsChange,
             onOpenWaveformEditor = { onOpenWaveformEditor(false) },
         )
         Spacer(Modifier.height(12.dp))
-        OtherOptionsCard(onReset = onReset, onReload = onReload)
+        OtherOptionsCard(
+            readOnly = readOnly,
+            onReset = onReset,
+            onReload = {
+                HapticEngine.killHost(context, host) { result, detail ->
+                    val text = when (result) {
+                        HapticEngine.ReloadResult.OK -> context.getString(R.string.reload_ok, host)
+                        HapticEngine.ReloadResult.NO_ROOT -> context.getString(R.string.reload_no_root)
+                        HapticEngine.ReloadResult.NO_SU -> context.getString(R.string.reload_no_su)
+                        HapticEngine.ReloadResult.FAILED ->
+                            context.getString(R.string.reload_failed, detail ?: "")
+                    }
+                    Toast.makeText(context, text, Toast.LENGTH_SHORT).show()
+                }
+            },
+            onOpenModuleSettings = onOpenModuleSettings,
+        )
         Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.navigationBarsPadding())
     }
 }
 
 @Composable
-private fun HostIdentityCard(hostPackage: String, hostVersion: String?) {
+private fun HostIdentityCard(host: String, hostVersion: String?, readOnly: Boolean) {
     Card(modifier = Modifier.fillMaxWidth(), insideMargin = PaddingValues(0.dp)) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(
-                text = stringResource(HostCatalog.labelRes(hostPackage)),
+                text = stringResource(HostCatalog.labelRes(host)),
                 fontSize = 16.sp,
                 fontWeight = FontWeight.SemiBold,
             )
             Text(
-                text = hostPackage,
+                text = host,
                 fontSize = 12.sp,
                 color = MiuixTheme.colorScheme.onSurfaceContainerVariant,
                 modifier = Modifier.padding(top = 2.dp),
             )
             Text(
-                text = "版本 ${hostVersion ?: "未知"}",
+                text = stringResource(
+                    R.string.host_version,
+                    hostVersion ?: stringResource(R.string.state_unknown),
+                ),
                 fontSize = 13.sp,
                 color = MiuixTheme.colorScheme.onSurfaceContainerVariant,
                 modifier = Modifier.padding(top = 8.dp),
             )
+            if (readOnly) {
+                Text(
+                    text = stringResource(R.string.read_only_hint),
+                    fontSize = 12.sp,
+                    color = MiuixTheme.colorScheme.primary,
+                    modifier = Modifier.padding(top = 6.dp),
+                )
+            }
         }
     }
 }
@@ -403,11 +516,7 @@ private fun InjectionCard(hookStatus: SettingsModel.HookStatus?) {
                     )
                 }
             }
-            Text(
-                text = title,
-                fontSize = 14.sp,
-                modifier = Modifier.padding(top = 6.dp),
-            )
+            Text(text = title, fontSize = 14.sp, modifier = Modifier.padding(top = 6.dp))
             Text(
                 text = detail,
                 fontSize = 12.sp,
@@ -434,13 +543,16 @@ private fun InjectionCard(hookStatus: SettingsModel.HookStatus?) {
 private fun VibrationCard(
     isDown: Boolean,
     state: SettingsModel.SettingsState,
-    onStateChange: (SettingsModel.SettingsState) -> Unit,
+    readOnly: Boolean,
     waveform: SettingsModel.WaveformHaptic?,
+    onStateChange: (SettingsModel.SettingsState) -> Unit,
     onOpenWaveformEditor: () -> Unit,
 ) {
     val context = LocalContext.current
     val view = LocalView.current
-    val title = if (isDown) "按下震动" else "抬起震动"
+    val modes = stringArrayResource(R.array.vibration_modes).toList()
+    val systemHaptics = stringArrayResource(R.array.system_haptics).toList()
+    val direction = stringResource(if (isDown) R.string.label_down else R.string.label_up)
     val mode = if (isDown) state.downIndex else state.upIndex
     val sysIndex = if (isDown) state.downSystemIndex else state.upSystemIndex
     val duration = if (isDown) state.downDuration else state.upDuration
@@ -449,9 +561,12 @@ private fun VibrationCard(
     Card(modifier = Modifier.fillMaxWidth(), insideMargin = PaddingValues(0.dp)) {
         Column(modifier = Modifier.padding(16.dp)) {
             OverlayDropdownPreference(
-                title = title,
-                items = MODE_NAMES,
+                title = stringResource(
+                    if (isDown) R.string.title_down_vibration else R.string.title_up_vibration,
+                ),
+                items = modes,
                 selectedIndex = mode,
+                enabled = !readOnly,
                 onSelectedIndexChange = {
                     onStateChange(if (isDown) state.copy(downIndex = it) else state.copy(upIndex = it))
                 },
@@ -459,41 +574,63 @@ private fun VibrationCard(
 
             AnimatedVisibility(visible = mode == 1) {
                 OverlayDropdownPreference(
-                    title = "系统震动风格",
-                    items = SYSTEM_HAPTICS,
+                    title = stringResource(R.string.title_system_haptic_style),
+                    items = systemHaptics,
                     selectedIndex = sysIndex,
+                    enabled = !readOnly,
                     onSelectedIndexChange = { index ->
-                        onStateChange(if (isDown) state.copy(downSystemIndex = index) else state.copy(upSystemIndex = index))
+                        onStateChange(
+                            if (isDown) {
+                                state.copy(downSystemIndex = index)
+                            } else {
+                                state.copy(upSystemIndex = index)
+                            },
+                        )
                         view.performHapticFeedback(hapticConstantForIndex(index))
                     },
                 )
             }
+
             AnimatedVisibility(visible = mode == 2) {
                 Column {
                     Text(
-                        "${if (isDown) "按下" else "抬起"}震动时长：${duration.toInt()} ms",
+                        text = stringResource(R.string.duration_label, direction, duration.toInt()),
                         fontSize = 14.sp,
                         color = Color.Unspecified,
                         modifier = Modifier.padding(top = 8.dp, start = 16.dp, end = 16.dp),
                     )
                     Slider(
                         value = duration,
+                        enabled = !readOnly,
                         onValueChange = {
-                            onStateChange(if (isDown) state.copy(downDuration = it) else state.copy(upDuration = it))
+                            onStateChange(
+                                if (isDown) {
+                                    state.copy(downDuration = it)
+                                } else {
+                                    state.copy(upDuration = it)
+                                },
+                            )
                         },
                         valueRange = 10f..200f,
                         modifier = Modifier.padding(horizontal = 16.dp),
                     )
                     Text(
-                        "${if (isDown) "按下" else "抬起"}震动强度：${(strength * 100).toInt()} %",
+                        text = stringResource(R.string.strength_label, direction, (strength * 100).toInt()),
                         fontSize = 14.sp,
                         color = Color.Unspecified,
                         modifier = Modifier.padding(top = 8.dp, start = 16.dp, end = 16.dp),
                     )
                     Slider(
                         value = strength,
+                        enabled = !readOnly,
                         onValueChange = {
-                            onStateChange(if (isDown) state.copy(downStrength = it) else state.copy(upStrength = it))
+                            onStateChange(
+                                if (isDown) {
+                                    state.copy(downStrength = it)
+                                } else {
+                                    state.copy(upStrength = it)
+                                },
+                            )
                         },
                         valueRange = 0f..1f,
                         modifier = Modifier.padding(horizontal = 16.dp),
@@ -501,39 +638,49 @@ private fun VibrationCard(
                 }
             }
 
-            // 仅自定义波形模式显示曲线预览与设置波形入口
             AnimatedVisibility(visible = mode == 3) {
                 Column {
-                    val w = waveform ?: if (isDown) {
-                        SettingsModel.defaultCustomHaptic().down!!
-                    } else {
-                        SettingsModel.defaultCustomHaptic().up!!
-                    }
+                    val fallback = SettingsModel.defaultCustomHaptic()
+                    val wave = waveform ?: if (isDown) fallback.down!! else fallback.up!!
                     Text(
-                        "曲线预览",
+                        text = stringResource(R.string.label_curve_preview),
                         fontSize = 14.sp,
                         color = MiuixTheme.colorScheme.onSurface,
                         modifier = Modifier.padding(top = 12.dp, bottom = 4.dp, start = 16.dp, end = 16.dp),
                     )
                     WaveformCurve(
-                        timings = w.timings.map { it.toInt() },
-                        amplitudes = w.amplitudes.toList(),
-                        count = w.timings.size.coerceIn(2, 8),
+                        a11y = stringResource(R.string.waveform_curve_a11y),
+                        timings = wave.timings.map { it.toInt() },
+                        amplitudes = wave.amplitudes,
+                        count = wave.timings.size.coerceIn(
+                            SettingsModel.MIN_SEGMENTS,
+                            SettingsModel.MAX_SEGMENTS,
+                        ),
                         selectedIndex = -1,
                         onSelect = { onOpenWaveformEditor() },
                         modifier = Modifier.padding(horizontal = 16.dp),
                     )
                     Text(
-                        "强度 0~255 · 时间累计 ${w.timings.sum()} ms（曲线为预览，实际按离散数值执行）",
+                        text = stringResource(R.string.curve_summary, wave.timings.sum().toInt()),
                         fontSize = 11.sp,
                         color = MiuixTheme.colorScheme.onSurfaceContainerVariant,
                         modifier = Modifier.padding(top = 4.dp, start = 16.dp, end = 16.dp),
                     )
                     ArrowPreference(
-                        title = "设置波形",
-                        summary = if (waveform == null) "未配置 · 将载入默认四段波形" else "已配置 · ${w.timings.size} 段",
+                        title = stringResource(R.string.action_setup_waveform),
+                        summary = if (waveform == null) {
+                            stringResource(R.string.waveform_not_set)
+                        } else {
+                            stringResource(R.string.waveform_set, wave.timings.size)
+                        },
+                        enabled = !readOnly,
                         startAction = {
-                            Icon(MiuixIcons.Tune, null, modifier = Modifier.padding(end = 12.dp), tint = MiuixTheme.colorScheme.primary)
+                            Icon(
+                                MiuixIcons.Tune,
+                                null,
+                                modifier = Modifier.padding(end = 12.dp),
+                                tint = MiuixTheme.colorScheme.primary,
+                            )
                         },
                         onClick = onOpenWaveformEditor,
                     )
@@ -541,15 +688,24 @@ private fun VibrationCard(
             }
 
             ArrowPreference(
-                title = "测试$title",
+                title = stringResource(R.string.action_test, direction),
                 startAction = {
-                    Icon(MiuixIcons.Play, null, modifier = Modifier.padding(end = 12.dp), tint = MiuixTheme.colorScheme.primary)
+                    Icon(
+                        MiuixIcons.Play,
+                        null,
+                        modifier = Modifier.padding(end = 12.dp),
+                        tint = MiuixTheme.colorScheme.primary,
+                    )
                 },
                 onClick = {
                     if (mode != 0) {
                         HapticEngine.triggerHapticPreview(
-                            context, view,
-                            mode, sysIndex, duration, strength,
+                            context,
+                            view,
+                            mode,
+                            sysIndex,
+                            duration,
+                            strength,
                             isDown = isDown,
                             waveform = waveform,
                         )
@@ -561,23 +717,87 @@ private fun VibrationCard(
 }
 
 @Composable
-private fun OtherOptionsCard(onReset: () -> Unit, onReload: () -> Unit) {
+private fun OtherOptionsCard(
+    readOnly: Boolean,
+    onReset: () -> Unit,
+    onReload: () -> Unit,
+    onOpenModuleSettings: () -> Unit,
+) {
     Card(modifier = Modifier.fillMaxWidth(), insideMargin = PaddingValues(0.dp)) {
         ArrowPreference(
-            title = "恢复默认配置",
-            summary = "恢复当前宿主的默认震动与波形",
+            title = stringResource(R.string.action_reset_default),
+            enabled = !readOnly,
             startAction = {
-                Icon(MiuixIcons.Reset, null, modifier = Modifier.padding(end = 12.dp), tint = MiuixTheme.colorScheme.primary)
+                Icon(
+                    MiuixIcons.Reset,
+                    null,
+                    modifier = Modifier.padding(end = 12.dp),
+                    tint = MiuixTheme.colorScheme.primary,
+                )
             },
             onClick = onReset,
         )
         ArrowPreference(
-            title = "重载输入法",
-            summary = "通过 Root 快速重启目标输入法进程",
+            title = stringResource(R.string.action_reload_ime),
+            summary = stringResource(R.string.reload_summary),
             startAction = {
-                Icon(MiuixIcons.Refresh, null, modifier = Modifier.padding(end = 12.dp), tint = MiuixTheme.colorScheme.primary)
+                Icon(
+                    MiuixIcons.Refresh,
+                    null,
+                    modifier = Modifier.padding(end = 12.dp),
+                    tint = MiuixTheme.colorScheme.primary,
+                )
             },
             onClick = onReload,
         )
+        ArrowPreference(
+            title = stringResource(R.string.title_module_settings),
+            startAction = {
+                Icon(
+                    MiuixIcons.Settings,
+                    null,
+                    modifier = Modifier.padding(end = 12.dp),
+                    tint = MiuixTheme.colorScheme.primary,
+                )
+            },
+            onClick = onOpenModuleSettings,
+        )
+    }
+}
+
+/** 宿主选择：列出两个宿主，当前项打钩；切到另一个宿主只读查看。 */
+@Composable
+private fun HostPickerDialog(
+    show: Boolean,
+    current: String,
+    primaryHost: String,
+    onDismiss: () -> Unit,
+    onSelect: (String) -> Unit,
+) {
+    if (!show) return
+    OverlayDialog(
+        title = stringResource(R.string.host_picker_title),
+        show = true,
+        onDismissRequest = onDismiss,
+    ) {
+        Column {
+            HostCatalog.ALL.forEach { host ->
+                val label = stringResource(HostCatalog.labelRes(host))
+                ArrowPreference(
+                    title = if (host == current) "✓ $label" else label,
+                    summary = if (host == primaryHost) {
+                        host
+                    } else {
+                        stringResource(R.string.read_only_hint)
+                    },
+                    onClick = { onSelect(host) },
+                )
+            }
+            TextButton(
+                text = stringResource(R.string.action_cancel),
+                onClick = onDismiss,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
     }
 }

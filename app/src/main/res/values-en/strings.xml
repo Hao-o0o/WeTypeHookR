@@ -19,6 +19,7 @@
 
     <string name="state_loading">Loading…</string>
     <string name="state_unknown">Unknown</string>
+    <string name="host_version">Version %1$s</string>
     <string name="host_name_wetype">WeType</string>
     <string name="host_name_doubao">Doubao IME</string>
     <string name="host_picker_title">Choose host</string>
@@ -71,6 +72,7 @@
     <string name="label_timing_range">Duration (ms, 0–%1$d)</string>
     <string name="label_timing_fixed_hint">Duration: 0 ms (first segment is fixed)</string>
     <string name="label_amplitude_range">Amplitude (0–%1$d)</string>
+    <string name="waveform_segment_title">%1$s · segment %2$d</string>
     <string name="waveform_sync_hint">Changes sync to the curve and rows below</string>
     <string name="waveform_down_desc">Custom waveform on press; the curve is a preview</string>
     <string name="waveform_up_desc">Custom waveform on release; the curve is a preview</string>

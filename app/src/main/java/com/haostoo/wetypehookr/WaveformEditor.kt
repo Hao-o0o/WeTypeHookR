@@ -24,6 +24,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -89,17 +90,17 @@ class WaveDraft(timings0: List<Int>, amps0: List<Int>) {
         timings[0] = 0
     }
 
-    /** 合规性校验（依据 VibrationEffect.createWaveform）：返回错误描述，合法返回 null。 */
-    fun validate(): String? {
-        if (count !in MIN_SEGMENTS..MAX_SEGMENTS) return "有效波段数需在 $MIN_SEGMENTS~$MAX_SEGMENTS 之间"
-        if (timings.size < count || amps.size < count) return "波段数据不完整"
-        if (timings[0] != 0) return "首段时长必须为 0"
+    /** 合规性校验（依据 VibrationEffect.createWaveform）：返回错误码，合法返回 null。 */
+    fun validate(): WaveError? {
+        if (count !in MIN_SEGMENTS..MAX_SEGMENTS) return WaveError.Count
+        if (timings.size < count || amps.size < count) return WaveError.Incomplete
+        if (timings[0] != 0) return WaveError.FirstTiming
         for (i in 0 until count) {
-            if (timings[i] < 0) return "波段 ${i + 1} 时长不能为负"
-            if (timings[i] > MAX_TIMING_MS) return "波段 ${i + 1} 时长不能超过 $MAX_TIMING_MS ms"
-            if (amps[i] !in 0..MAX_AMPLITUDE) return "波段 ${i + 1} 强度需在 0~$MAX_AMPLITUDE 之间"
+            if (timings[i] < 0) return WaveError.Negative(i + 1)
+            if (timings[i] > MAX_TIMING_MS) return WaveError.TooLong(i + 1)
+            if (amps[i] !in 0..MAX_AMPLITUDE) return WaveError.Amplitude(i + 1)
         }
-        if (timings.take(count).drop(1).sum() <= 0) return "至少需要一段大于 0 ms 的波段"
+        if (timings.take(count).drop(1).sum() <= 0) return WaveError.NoPositive
         return null
     }
 
@@ -112,6 +113,29 @@ class WaveDraft(timings0: List<Int>, amps0: List<Int>) {
 
     fun timingAt(index: Int): Int = timings.getOrNull(index) ?: 0
     fun amplitudeAt(index: Int): Int = amps.getOrNull(index) ?: 0
+}
+
+/** 波形校验失败的原因；文案在 UI 层由资源解析。 */
+sealed interface WaveError {
+    data object Count : WaveError
+    data object Incomplete : WaveError
+    data object FirstTiming : WaveError
+    data class Negative(val segment: Int) : WaveError
+    data class TooLong(val segment: Int) : WaveError
+    data class Amplitude(val segment: Int) : WaveError
+    data object NoPositive : WaveError
+}
+
+@Composable
+fun waveErrorText(error: WaveError?): String = when (error) {
+    null -> ""
+    WaveError.Count -> stringResource(R.string.error_segment_count, MIN_SEGMENTS, MAX_SEGMENTS)
+    WaveError.Incomplete -> stringResource(R.string.error_segment_incomplete)
+    WaveError.FirstTiming -> stringResource(R.string.error_first_timing_zero)
+    is WaveError.Negative -> stringResource(R.string.error_timing_negative, error.segment)
+    is WaveError.TooLong -> stringResource(R.string.error_timing_too_long, error.segment, MAX_TIMING_MS)
+    is WaveError.Amplitude -> stringResource(R.string.error_amplitude_range, error.segment, MAX_AMPLITUDE)
+    WaveError.NoPositive -> stringResource(R.string.error_no_positive_timing)
 }
 
 private fun linearSample(xs: FloatArray, ys: FloatArray, x: Float): Float {
@@ -180,7 +204,7 @@ fun WaveformEditorContent(
 
         if (error != null) {
             Text(
-                text = error,
+                text = waveErrorText(error),
                 fontSize = 12.sp,
                 color = MiuixTheme.colorScheme.primary,
                 modifier = Modifier.padding(top = 8.dp),
@@ -193,10 +217,14 @@ fun WaveformEditorContent(
                 .padding(top = 16.dp, bottom = 8.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            TextButton(text = "取消", onClick = onCancel, modifier = Modifier.weight(1f))
+            TextButton(
+                text = stringResource(R.string.action_cancel),
+                onClick = onCancel,
+                modifier = Modifier.weight(1f),
+            )
             Spacer(Modifier.width(12.dp))
             TextButton(
-                text = "保存",
+                text = stringResource(R.string.action_save),
                 onClick = onSave,
                 modifier = Modifier.weight(1f),
                 colors = ButtonDefaults.textButtonColorsPrimary(),
@@ -208,7 +236,9 @@ fun WaveformEditorContent(
     val safeIndex = selectedIndex.coerceIn(0, (draft.count - 1).coerceAtLeast(0))
     NodeEditSheet(
         show = sheetVisible,
-        directionTitle = if (isDown) "按下波形" else "抬起波形",
+        directionTitle = stringResource(
+            if (isDown) R.string.title_down_waveform else R.string.title_up_waveform,
+        ),
         index = safeIndex,
         timing = draft.timingAt(safeIndex),
         amplitude = draft.amplitudeAt(safeIndex),
@@ -226,12 +256,10 @@ private fun WaveformCard(
     selectedIndex: Int,
     onSelect: (Int) -> Unit,
 ) {
-    val title = if (isDown) "按下波形" else "抬起波形"
-    val description = if (isDown) {
-        "手指按下时的自定义波形；曲线为预览，实际按离散数值执行。"
-    } else {
-        "手指抬起时的自定义波形；曲线为预览，实际按离散数值执行。"
-    }
+    val title = stringResource(if (isDown) R.string.title_down_waveform else R.string.title_up_waveform)
+    val description = stringResource(
+        if (isDown) R.string.waveform_down_desc else R.string.waveform_up_desc,
+    )
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(text = title, fontSize = 15.sp, color = MiuixTheme.colorScheme.onSurface)
@@ -241,7 +269,7 @@ private fun WaveformCard(
             ControlledNumberField(
                 value = draft.count,
                 onValueChange = { draft.changeCount(it) },
-                label = "有效波段数（$MIN_SEGMENTS~$MAX_SEGMENTS）",
+                label = stringResource(R.string.segment_count_label, MIN_SEGMENTS, MAX_SEGMENTS),
                 range = MIN_SEGMENTS..MAX_SEGMENTS,
                 modifier = Modifier
                     .fillMaxWidth()
@@ -250,6 +278,7 @@ private fun WaveformCard(
 
             Spacer(Modifier.width(8.dp))
             WaveformCurve(
+                a11y = stringResource(R.string.waveform_curve_a11y),
                 timings = draft.timings,
                 amplitudes = draft.amps,
                 count = draft.count,
@@ -258,7 +287,13 @@ private fun WaveformCard(
                 modifier = Modifier.padding(top = 8.dp),
             )
             Text(
-                text = "强度 0~255 · 时间累计 ${sumTimings(draft)} ms · 选中：波段 ${selectedIndex + 1}（时长 ${draft.timingAt(selectedIndex)}ms，强度 ${draft.amplitudeAt(selectedIndex)}）",
+                text = stringResource(
+                    R.string.waveform_editor_summary,
+                    sumTimings(draft),
+                    selectedIndex + 1,
+                    draft.timingAt(selectedIndex),
+                    draft.amplitudeAt(selectedIndex),
+                ),
                 fontSize = 11.sp,
                 color = MiuixTheme.colorScheme.onSurfaceContainerVariant,
                 modifier = Modifier.padding(top = 4.dp),
@@ -276,14 +311,14 @@ private fun WaveformCard(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text(
-                            text = "波段 ${i + 1}",
+                            text = stringResource(R.string.segment_index, i + 1),
                             fontSize = 13.sp,
                             color = MiuixTheme.colorScheme.onSurfaceContainerVariant,
                         )
                         if (i == 0) {
                             // timings[0] 依 Android 文档必须为 0：灰色只读，不可编辑
                             Text(
-                                text = "0（固定）",
+                                text = stringResource(R.string.segment_first_fixed),
                                 fontSize = 13.sp,
                                 color = MiuixTheme.colorScheme.onSurfaceContainerVariant.copy(alpha = 0.45f),
                                 modifier = Modifier
@@ -294,7 +329,7 @@ private fun WaveformCard(
                             ControlledNumberField(
                                 value = draft.timingAt(i),
                                 onValueChange = { draft.setTiming(i, it) },
-                                label = "时长(ms)",
+                                label = stringResource(R.string.label_timing_ms),
                                 range = 0..MAX_TIMING_MS,
                                 modifier = Modifier.weight(1f),
                             )
@@ -302,7 +337,7 @@ private fun WaveformCard(
                         ControlledNumberField(
                             value = draft.amplitudeAt(i),
                             onValueChange = { draft.setAmplitude(i, it) },
-                            label = "强度(0-255)",
+                            label = stringResource(R.string.label_amplitude),
                             range = 0..MAX_AMPLITUDE,
                             modifier = Modifier.weight(1f),
                         )
@@ -327,7 +362,11 @@ private fun NodeEditSheet(
 ) {
     OverlayBottomSheet(
         show = show,
-        title = "$directionTitle · 波段 ${index + 1}",
+        title = stringResource(
+            R.string.waveform_segment_title,
+            directionTitle,
+            index + 1,
+        ),
         onDismissRequest = onDismiss,
     ) {
         Column(modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 16.dp)) {
@@ -335,7 +374,7 @@ private fun NodeEditSheet(
                 ControlledNumberField(
                     value = timing,
                     onValueChange = onTimingChange,
-                    label = "时长(ms，0~$MAX_TIMING_MS)",
+                    label = stringResource(R.string.label_timing_range, MAX_TIMING_MS),
                     range = 0..MAX_TIMING_MS,
                     modifier = Modifier
                         .fillMaxWidth()
@@ -343,7 +382,7 @@ private fun NodeEditSheet(
                 )
             } else {
                 Text(
-                    text = "时长：0 ms（首段固定，不可编辑）",
+                    text = stringResource(R.string.label_timing_fixed_hint),
                     fontSize = 13.sp,
                     color = MiuixTheme.colorScheme.onSurfaceContainerVariant,
                     modifier = Modifier.padding(vertical = 6.dp),
@@ -352,14 +391,14 @@ private fun NodeEditSheet(
             ControlledNumberField(
                 value = amplitude,
                 onValueChange = onAmplitudeChange,
-                label = "强度(0~$MAX_AMPLITUDE)",
+                label = stringResource(R.string.label_amplitude_range, MAX_AMPLITUDE),
                 range = 0..MAX_AMPLITUDE,
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(vertical = 6.dp),
             )
             Text(
-                text = "调整会立即同步到曲线与下方输入行。",
+                text = stringResource(R.string.waveform_sync_hint),
                 fontSize = 12.sp,
                 color = MiuixTheme.colorScheme.onSurfaceContainerVariant,
                 modifier = Modifier.padding(top = 4.dp),
@@ -383,6 +422,8 @@ private fun ControlledNumberField(
     val focused by interaction.collectIsFocusedAsState()
     var lastEmitted by remember { mutableStateOf(value) }
     var error by remember { mutableStateOf<String?>(null) }
+    val intRequired = stringResource(R.string.input_integer_required)
+    val rangeText = stringResource(R.string.input_range, range.first, range.last)
     var wasFocused by remember { mutableStateOf(false) }
 
     LaunchedEffect(value) {
@@ -397,8 +438,8 @@ private fun ControlledNumberField(
         snapshotFlow { state.text.toString() }.collect { text ->
             val parsed = text.toIntOrNull()
             when {
-                parsed == null -> error = if (text.isEmpty()) null else "请输入整数"
-                parsed !in range -> error = "范围 ${range.first}~${range.last}"
+                parsed == null -> error = if (text.isEmpty()) null else intRequired
+                parsed !in range -> error = rangeText
                 else -> {
                     error = null
                     if (parsed != lastEmitted) {

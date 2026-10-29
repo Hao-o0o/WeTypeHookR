@@ -20,7 +20,7 @@ object HostInfo {
             @Suppress("DEPRECATION")
             info.versionCode.toLong()
         }
-        "${info.versionName ?: "未知"} ($code)"
+        info.versionName?.let { "$it ($code)" }
     }.getOrNull()
 
     fun isInstalled(context: Context, hostPackage: String): Boolean = runCatching {

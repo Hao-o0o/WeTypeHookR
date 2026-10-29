@@ -139,6 +139,7 @@ internal fun pchipSample(xs: FloatArray, ys: FloatArray, perSegment: Int = 24): 
  */
 @Composable
 fun WaveformCurve(
+    a11y: String,
     timings: List<Int>,
     amplitudes: List<Int>,
     count: Int,
@@ -165,7 +166,7 @@ fun WaveformCurve(
             .fillMaxWidth()
             .height(160.dp)
             .onSizeChanged { size = it }
-            .semantics { contentDescription = "波形曲线预览，点击节点可编辑对应波段；下方输入行同样可编辑" }
+            .semantics { contentDescription = a11y }
             .pointerInput(geometry) {
                 detectTapGestures { offset ->
                     val nodes = geometry?.nodes ?: return@detectTapGestures

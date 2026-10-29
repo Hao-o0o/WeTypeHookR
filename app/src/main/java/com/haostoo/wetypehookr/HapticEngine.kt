@@ -117,24 +117,30 @@ object HapticEngine {
         }
     }
 
-    /** 通过 su 快速重启目标输入法进程（设置页“重载输入法”）。 */
-    fun killHost(context: Context, packageName: String, onResult: (String) -> Unit) {
+    /** 重载输入法的结果；文案在 UI 层由资源解析。 */
+    enum class ReloadResult { OK, NO_ROOT, NO_SU, FAILED }
+
+    /** 通过 su 快速重启目标输入法进程（设置页「重载输入法」）。 */
+    fun killHost(
+        context: Context,
+        packageName: String,
+        onResult: (ReloadResult, String?) -> Unit,
+    ) {
         MainScope().launch {
-            val message = withContext(Dispatchers.IO) {
+            val outcome = withContext(Dispatchers.IO) {
                 runCatching {
-                    val process = Runtime.getRuntime()
-                        .exec(arrayOf("su", "-c", "am force-stop $packageName"))
+                    val process = Runtime.getRuntime().exec(arrayOf("su", "-c", "am force-stop $packageName"))
                     val error = process.errorStream.bufferedReader().readText().trim()
                     process.waitFor()
                     when {
-                        error.contains("permission denied", ignoreCase = true) -> "失败：没有 root 权限"
-                        error.contains("not found", ignoreCase = true) -> "失败：找不到 su"
-                        error.isNotEmpty() -> "失败：$error"
-                        else -> "成功：已重启 $packageName"
+                        error.contains("permission denied", ignoreCase = true) -> ReloadResult.NO_ROOT to null
+                        error.contains("not found", ignoreCase = true) -> ReloadResult.NO_SU to null
+                        error.isNotEmpty() -> ReloadResult.FAILED to error
+                        else -> ReloadResult.OK to null
                     }
-                }.getOrElse { e -> "失败：${e.message}" }
+                }.getOrElse { e -> ReloadResult.FAILED to e.message }
             }
-            onResult(message)
+            onResult(outcome.first, outcome.second)
         }
     }
 }

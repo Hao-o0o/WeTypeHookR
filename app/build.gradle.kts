@@ -99,7 +99,6 @@ dependencies {
     implementation("top.yukonga.miuix.kmp:miuix-ui-android:0.9.3")
     implementation("top.yukonga.miuix.kmp:miuix-preference-android:0.9.3")
     implementation("top.yukonga.miuix.kmp:miuix-icons-android:0.9.3")
-    implementation("com.github.jeziellago:compose-markdown:0.5.4")
 }
 java {
     toolchain {

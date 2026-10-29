@@ -24,7 +24,7 @@ class SettingsActivity : BaseHostActivity() {
         Log.i(TAG, "SettingsActivity onCreate host=$host pid=${Process.myPid()} filesDir=$filesDir")
 
         setContent {
-            HostSettingsScreen(hostPackage = host, onBack = { finish() })
+            SettingsApp()
         }
     }
 

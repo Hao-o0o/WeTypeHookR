@@ -19,6 +19,7 @@
 
     <string name="state_loading">加载中…</string>
     <string name="state_unknown">未知</string>
+    <string name="host_version">版本 %1$s</string>
     <string name="host_name_wetype">微信输入法</string>
     <string name="host_name_doubao">豆包输入法</string>
     <string name="host_picker_title">选择宿主</string>
@@ -71,6 +72,7 @@
     <string name="label_timing_range">时长(ms，0~%1$d)</string>
     <string name="label_timing_fixed_hint">时长：0 ms（首段固定，不可编辑）</string>
     <string name="label_amplitude_range">强度(0~%1$d)</string>
+    <string name="waveform_segment_title">%1$s · 波段 %2$d</string>
     <string name="waveform_sync_hint">调整会立即同步到曲线与下方输入行。</string>
     <string name="waveform_down_desc">手指按下时的自定义波形；曲线为预览，实际按离散数值执行。</string>
     <string name="waveform_up_desc">手指抬起时的自定义波形；曲线为预览，实际按离散数值执行。</string>
