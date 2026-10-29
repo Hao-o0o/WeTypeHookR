@@ -1,6 +1,8 @@
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.plugin.compose")
+    id("com.google.devtools.ksp")
+    id("org.jetbrains.kotlin.plugin.serialization")
 }
 
 android {
@@ -36,10 +38,10 @@ android {
 
     defaultConfig {
         applicationId = "com.haostoo.wetypehookr"
-        minSdk = 30
+        minSdk = 33
         targetSdk = 35
-        versionCode = 1225
-        versionName = "1.2.2"
+        versionCode = 1400
+        versionName = "1.4.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -57,6 +59,11 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_21
         targetCompatibility = JavaVersion.VERSION_21
+    }
+    // 模块资源注入宿主进程：必须使用非 0x7f 的资源包 ID，否则与宿主资源冲突。
+    androidResources {
+        additionalParameters +=
+            listOf("--allow-reserved-package-id", "--package-id", "0x64")
     }
     buildFeatures {
         compose = true
@@ -80,14 +87,18 @@ dependencies {
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
-    compileOnly("io.github.libxposed:api:101.0.1")
-    implementation("top.yukonga.miuix.kmp:miuix-ui-android:0.9.0")
-    implementation("top.yukonga.miuix.kmp:miuix-preference-android:0.9.0")
-    implementation("top.yukonga.miuix.kmp:miuix-icons-android:0.9.0")
-    implementation("androidx.navigation:navigation-compose:2.9.8")
-    implementation("androidx.navigationevent:navigationevent-compose:1.1.0")
-    implementation("io.coil-kt:coil-compose:2.6.0")
-    implementation("com.github.jeziellago:compose-markdown:0.5.4")
+    compileOnly("io.github.libxposed:api:102.0.0")
+    // YukiHook：核心 DSL + libxposed 底座 + KSP 编译器（生成入口与 META-INF/xposed）
+    implementation("com.highcapable.yukihookapi:yukihook-core:1.5.0")
+    implementation("com.highcapable.yukihookapi:yukihook-runtime-libxposed:1.5.0")
+    ksp("com.highcapable.yukihookapi:yukihook-compiler:1.5.0")
+    // ModuleActivity 需要 AppCompat 宿主主题
+    implementation("androidx.appcompat:appcompat:1.7.1")
+    // 配置序列化（单快照 state.json）
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.9.0")
+    implementation("top.yukonga.miuix.kmp:miuix-ui-android:0.9.3")
+    implementation("top.yukonga.miuix.kmp:miuix-preference-android:0.9.3")
+    implementation("top.yukonga.miuix.kmp:miuix-icons-android:0.9.3")
 }
 java {
     toolchain {

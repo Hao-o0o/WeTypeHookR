@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string-array name="vibration_modes">
+        <item>无震动</item>
+        <item>系统预设风格</item>
+        <item>简单自定义</item>
+        <item>自定义波形</item>
+    </string-array>
+
+    <!-- 与 HapticFeedbackConstants 对应的 20 种系统风格；两语言一致 -->
+    <string-array name="system_haptics">
+        <item>Virtual Key</item>
+        <item>Virtual Key Release</item>
+        <item>Keyboard Tap</item>
+        <item>Keyboard Press</item>
+        <item>Keyboard Release</item>
+        <item>Long Press</item>
+        <item>Context Click</item>
+        <item>Confirm</item>
+        <item>Reject</item>
+        <item>Clock Tick</item>
+        <item>Gesture Start</item>
+        <item>Gesture End</item>
+        <item>Gesture Threshold Activate</item>
+        <item>Gesture Threshold Deactivate</item>
+        <item>Drag Start</item>
+        <item>Text Handle Move</item>
+        <item>Segment Tick</item>
+        <item>Segment Frequent Tick</item>
+        <item>Toggle On</item>
+        <item>Toggle Off</item>
+    </string-array>
+
+    <string-array name="color_modes">
+        <item>浅色</item>
+        <item>深色</item>
+        <item>跟随系统</item>
+    </string-array>
+    <string-array name="help_lines">
+        <item>入口：在输入法设置页点击侧边圆形按钮打开本页。</item>
+        <item>配置按宿主隔离，保存在该宿主的 files/haostoo/config/state.json，改动即时生效。</item>
+        <item>四种模式：无震动、系统预设风格、简单自定义（时长 + 强度）、自定义波形。</item>
+        <item>自定义波形支持 2~8 段：首段时长固定为 0，单段时长 0~500ms，强度 0~255，至少一段大于 0ms。</item>
+        <item>曲线仅作预览，实际震动按离散的时长与强度数值执行。</item>
+        <item>点击顶栏标题区可切换查看另一个宿主，对方目录不可读时仅显示提示。</item>
+    </string-array>
+</resources>

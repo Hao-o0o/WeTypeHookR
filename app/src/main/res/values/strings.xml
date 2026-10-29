@@ -1,3 +1,145 @@
+<?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">WeDouVibrator</string>
+    <string name="app_name">TypeVibrator</string>
+    <string name="module_description">为微信输入法 / 豆包输入法提供可自定义的双段触感反馈</string>
+
+    <string name="action_back">返回</string>
+    <string name="action_cancel">取消</string>
+    <string name="action_confirm">确认</string>
+    <string name="action_save">保存</string>
+    <string name="action_close">关闭</string>
+    <string name="action_switch_host">切换宿主</string>
+    <string name="action_reset_default">恢复默认配置</string>
+    <string name="action_reload_ime">重载输入法</string>
+    <string name="action_export_config">导出配置</string>
+    <string name="action_import_config">导入配置</string>
+    <string name="action_export_logs">导出日志</string>
+    <string name="action_clear_logs">清除日志</string>
+    <string name="action_save_image">保存图片</string>
+
+    <string name="state_loading">加载中…</string>
+    <string name="state_unknown">未知</string>
+    <string name="host_version">版本 %1$s</string>
+    <string name="host_name_wetype">微信输入法</string>
+    <string name="host_name_doubao">豆包输入法</string>
+    <string name="host_picker_title">选择宿主</string>
+    <string name="host_no_access_hint">无法读取该宿主配置（不同应用的数据目录不可互访），当前仅供查看</string>
+
+    <string name="title_injection">注入状态</string>
+    <string name="injection_none">未观测到注入</string>
+    <string name="injection_none_hint">打开输入法并切换一次键盘后再回来查看</string>
+    <string name="injection_hook_missing">模块已加载，Hook 未安装</string>
+    <string name="injection_hook_missing_hint">输入法版本可能已变更，可通过日志反馈</string>
+    <string name="injection_ok">Hook 已注入</string>
+    <string name="injection_ok_hint">配置更新于 %1$s</string>
+    <string name="injection_heartbeat">最近心跳 %1$s · 模块 %2$s</string>
+
+    <string name="title_down_vibration">按下震动</string>
+    <string name="title_up_vibration">抬起震动</string>
+    <string name="title_system_haptic_style">系统震动风格</string>
+    <string name="label_down">按下</string>
+    <string name="label_up">抬起</string>
+    <string name="label_curve_preview">曲线预览</string>
+    <string name="curve_summary">强度 0~255 · 时间累计 %1$d ms（曲线为预览，实际按离散数值执行）</string>
+    <string name="action_setup_waveform">设置波形</string>
+    <string name="waveform_not_set">未配置 · 将载入默认四段波形</string>
+    <string name="waveform_set">已配置 · %1$d 段</string>
+    <string name="duration_label">%1$s震动时长：%2$d ms</string>
+    <string name="strength_label">%1$s震动强度：%2$d%%</string>
+    <string name="action_test">测试%1$s震动</string>
+
+    <string name="reset_confirm_message">将当前宿主的震动设置与自定义波形恢复为默认值？</string>
+    <string name="reset_done">已恢复默认配置</string>
+    <string name="reload_summary">通过 Root 快速重启目标输入法进程</string>
+    <string name="reload_ok">成功：已重启 %1$s</string>
+    <string name="reload_no_root">失败：没有 root 权限</string>
+    <string name="reload_no_su">失败：找不到 su</string>
+    <string name="reload_failed">失败：%1$s</string>
+
+    <string name="waveform_save_failed">波形保存失败</string>
+    <string name="waveform_saved">%1$s波形已保存</string>
+    <string name="waveform_invalid">波形数据不合法</string>
+    <string name="waveform_legacy_warn">检测到历史波形数据长度或数组不一致，已载入默认波形草稿；保存后将按当前数量规范化。</string>
+    <string name="read_config_failed">读取当前配置失败</string>
+
+    <string name="title_down_waveform">按下波形</string>
+    <string name="title_up_waveform">抬起波形</string>
+    <string name="segment_count_label">有效波段数（%1$d~%2$d）</string>
+    <string name="segment_index">波段 %1$d</string>
+    <string name="segment_first_fixed">0（固定）</string>
+    <string name="label_timing_ms">时长(ms)</string>
+    <string name="label_amplitude">强度(0-255)</string>
+    <string name="label_timing_range">时长(ms，0~%1$d)</string>
+    <string name="label_timing_fixed_hint">时长：0 ms（首段固定，不可编辑）</string>
+    <string name="label_amplitude_range">强度(0~%1$d)</string>
+    <string name="waveform_segment_title">%1$s · 波段 %2$d</string>
+    <string name="waveform_sync_hint">调整会立即同步到曲线与下方输入行。</string>
+    <string name="waveform_down_desc">手指按下时的自定义波形；曲线为预览，实际按离散数值执行。</string>
+    <string name="waveform_up_desc">手指抬起时的自定义波形；曲线为预览，实际按离散数值执行。</string>
+    <string name="waveform_editor_summary">强度 0~255 · 时间累计 %1$d ms · 选中：波段 %2$d（时长 %3$dms，强度 %4$d）</string>
+    <string name="waveform_curve_a11y">波形曲线预览，点击节点可编辑对应波段；下方输入行同样可编辑</string>
+
+    <string name="input_integer_required">请输入整数</string>
+    <string name="input_range">范围 %1$d~%2$d</string>
+    <string name="error_segment_count">有效波段数需在 %1$d~%2$d 之间</string>
+    <string name="error_segment_incomplete">波段数据不完整</string>
+    <string name="error_first_timing_zero">首段时长必须为 0</string>
+    <string name="error_timing_negative">波段 %1$d 时长不能为负</string>
+    <string name="error_timing_too_long">波段 %1$d 时长不能超过 %2$d ms</string>
+    <string name="error_amplitude_range">波段 %1$d 强度需在 0~%2$d 之间</string>
+    <string name="error_no_positive_timing">至少需要一段大于 0 ms 的波段</string>
+
+    <string name="title_module_settings">模块设置</string>
+    <string name="title_color_mode">颜色模式</string>
+    <string name="title_debug_logs">调试日志</string>
+    <string name="summary_debug_logs">开启后按分类写入宿主配置目录（重启输入法后生效）</string>
+    <string name="summary_clear_logs">删除当前宿主全部日志</string>
+    <string name="summary_export_logs">打包当前宿主日志为 zip</string>
+    <string name="toast_logs_cleared">日志已清除</string>
+    <string name="toast_logs_exported">日志已导出</string>
+    <string name="toast_logs_empty">没有可导出的日志</string>
+    <string name="toast_export_failed">导出失败：%1$s</string>
+    <string name="toast_config_exported">配置已导出</string>
+    <string name="toast_config_imported">配置已导入</string>
+    <string name="toast_read_file_failed">读取文件失败</string>
+    <string name="error_import_format">导入失败：文件格式不正确</string>
+    <string name="summary_export_config">导出当前宿主设置与波形（JSON）</string>
+    <string name="summary_import_config">从 JSON 恢复当前宿主设置与波形</string>
+
+    <string name="title_help">帮助文档</string>
+    <string name="summary_help">使用说明与波形格式</string>
+    <string name="help_load_failed">加载失败，请检查网络，或到仓库查看 README。</string>
+
+    <string name="title_about">关于作者</string>
+    <string name="title_repo">仓库主页</string>
+    <string name="title_coolapk">酷安主页</string>
+    <string name="title_channel">频道连接</string>
+    <string name="title_sponsor">赞助作者</string>
+    <string name="summary_sponsor">扫码支持作者，也可以先保存图片再识别</string>
+    <string name="sponsor_dialog_message">感谢你帮作者喂一口大肥鱼</string>
+    <string name="sponsor_qr_a11y">赞助二维码</string>
+    <string name="toast_saved_to_gallery">已保存到相册：Pictures/WeDouVibrator</string>
+    <string name="toast_save_failed">保存失败</string>
+    <string name="link_unavailable">链接待补充</string>
+    <string name="toast_open_link_failed">无法打开链接</string>
+    <string name="toast_open_settings_failed">无法在输入法内打开设置页，请反馈输入法版本</string>
+
+    <string name="read_only_hint">当前为只读查看</string>
+
+    <string name="tab_home">首页</string>
+    <string name="tab_config">配置</string>
+    <string name="tab_settings">设置</string>
+    <string name="title_module">模块</string>
+    <string name="label_module_version">模块版本 %1$s</string>
+
+    <string name="title_framework_status">框架连接状态</string>
+    <string name="status_connected">已连接</string>
+    <string name="status_disconnected">未连接</string>
+    <string name="framework_unavailable_hint">暂时读不到框架信息，检查框架是否在运行后再试。</string>
+    <string name="title_version_info">版本信息</string>
+    <string name="label_app_version">应用版本</string>
+    <string name="label_framework_version">框架版本</string>
+    <string name="label_api_version">API 版本</string>
+    <string name="label_android_version">Android 版本</string>
+    <string name="label_system_version">系统版本</string>
 </resources>

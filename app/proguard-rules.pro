@@ -22,5 +22,16 @@
 -dontobfuscate
 -dontoptimize
 
-# 保留你的代码
+# LibXposed 官方：保持 java_init.list 中入口类名与资源文件内容同步（R8 资源路径重写时同步修正类名）
+-adaptresourcefilecontents META-INF/xposed/java_init.list
+
+# 保留模块自身代码：入口与寄生 Activity 都由框架按类名反射加载
 -keep class com.haostoo.wetypehookr.** { *; }
+
+# YukiHook 生成的入口（KSP 产出，类名 = 注解类 + _YukiHookXposedInit）
+-keep class com.haostoo.wetypehookr.HookEntry_YukiHookXposedInit { *; }
+
+# 寄生 Activity 由框架在启动阶段换回模块类，构造函数必须保留
+-keepclassmembers class * extends com.haostoo.wetypehookr.BaseHostActivity {
+    public <init>();
+}

@@ -1,4 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.WeTypeHookR" parent="android:Theme.Material.Light.NoActionBar"/>
+    <!-- 只负责窗口基础：AppCompat（ModuleActivity 要求）+ 无 ActionBar。
+         页面视觉由 MiuixTheme 决定，深浅色由 ui.json 的 color_mode 驱动。 -->
+    <style name="Theme.WeTypeHookR" parent="Theme.AppCompat.DayNight.NoActionBar">
+        <item name="android:windowBackground">@android:color/transparent</item>
+    </style>
 </resources>
