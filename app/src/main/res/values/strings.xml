@@ -6,5 +6,6 @@
     <string name="host_name_doubao">豆包输入法</string>
     <string name="state_unknown">未知</string>
 
+    <string name="action_back">返回</string>
     <string name="toast_open_settings_failed">无法在输入法内打开设置页，请反馈输入法版本</string>
 </resources>

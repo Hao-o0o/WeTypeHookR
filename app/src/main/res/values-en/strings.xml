@@ -6,5 +6,6 @@
     <string name="host_name_doubao">Doubao IME</string>
     <string name="state_unknown">Unknown</string>
 
+    <string name="action_back">Back</string>
     <string name="toast_open_settings_failed">Cannot open settings inside the IME</string>
 </resources>

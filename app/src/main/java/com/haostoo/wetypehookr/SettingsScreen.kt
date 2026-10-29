@@ -216,25 +216,16 @@ fun HostSettingsScreen(hostPackage: String, onBack: () -> Unit) {
     MiuixTheme(colors = if (dark) darkColorScheme() else lightColorScheme()) {
         Scaffold(
             topBar = {
-                TopAppBar(
-                    title = if (editDown != null) {
-                        if (editDown) "按下波形" else "抬起波形"
-                    } else {
-                        stringResource(HostCatalog.labelRes(hostPackage))
-                    },
-                    navigationIcon = {
-                        IconButton(onClick = {
-                            if (editDown != null) {
-                                editingDown = null
-                                activeDraft = null
-                            } else {
-                                onBack()
-                            }
-                        }) {
-                            Icon(MiuixIcons.Back, if (editDown != null) "取消" else "返回")
+                SettingsTopBar(
+                    subtitle = stringResource(HostCatalog.labelRes(hostPackage)),
+                    onBack = {
+                        if (editDown != null) {
+                            editingDown = null
+                            activeDraft = null
+                        } else {
+                            onBack()
                         }
                     },
-                    scrollBehavior = scrollBehavior,
                 )
             },
         ) { padding ->
