@@ -162,6 +162,13 @@ object HostFabInjector {
             proxy?.let { activity.registerModuleActivities(it) }
             activity.startActivity(android.content.Intent(activity, SettingsActivity::class.java))
             HostDiag.log(activity, "FAB", "startActivity ok proxy=$proxy")
+            // 1.2s 后如果设置页仍没起来，说明代理 Activity 启动了但没被替换成本模块页面，
+            // 这种「点了没反应」只能靠这段自检 + 崩溃日志区分原因。
+            activity.window?.decorView?.postDelayed({
+                if (SettingsActivity.isAlive) return@postDelayed
+                HostDiag.log(activity, "FAB", "no UI after 1200ms host=$host proxy=$proxy proc=$proc")
+                HookEntry.logHostActivities(activity)
+            }, 1200)
         }.onFailure {
             Log.w(TAG, "launch SettingsActivity failed: host=$host proxy=$proxy", it)
             HostDiag.log(activity, "FAB", "fail proxy=$proxy err=${it.javaClass.name}: ${it.message}")

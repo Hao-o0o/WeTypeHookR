@@ -64,6 +64,9 @@ object HookEntry : YukiHookXposedModule {
                     )
                 }
 
+                // 崩溃留证：宿主进程里模块导致的未捕获异常写进 diag.log（logcat 会轮转丢失）。
+                appContext?.let { HostDiag.installCrashHandler(it) }
+
                 installTouchHooks()
                 appContext?.let { SettingsStore.attach(it, host) }
 
