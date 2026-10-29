@@ -11,6 +11,7 @@
 | 文档 | 定位 | 时效 |
 | --- | --- | --- |
 | **本文 `DEVELOPMENT_GUIDE.md`** | 开发总纲：架构、钩子、配置契约、miuix 规范、构建调试 | 与 1.3.0 代码同步 |
+| `TASK_HOST_SETTINGS_MIGRATION.md` | **待执行的重构任务书**：设置页迁入宿主进程、配置回归宿主目录、文案集中映射 | 执行后其结论将覆盖本文的 Remote/独立 App 章节 |
 | `UI_AND_WAVEFORM_DESIGN_GUIDE.md` | 界面/波形编辑器的设计规格（为什么这么设计） | 已实现，仍有效 |
 | `HOST_INJECTED_SETTINGS_ACTIVITY_GUIDE.md` | 宿主内设置入口（FAB + 一次性凭证）的规格 | 已实现，仍有效 |
 | `API102_MIGRATION_GUIDE.md` | API 101 → 102 的迁移规格 | 已完成，作历史参考 |
