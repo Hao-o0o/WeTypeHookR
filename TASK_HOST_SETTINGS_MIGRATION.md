@@ -5,6 +5,10 @@
 > **技术底座**：YukiHook（`yukihook-core` + `yukihook-runtime-libxposed` + `yukihook-compiler`）跑在 LibXposed API 102 之上
 > **配套文档**：`DEVELOPMENT_GUIDE.md`（架构与规范参考）。两者冲突时以本文为准。
 
+> **实施进度（2026-10-29）**
+> - 已完成：P0 底座切换（`82dd316`）、设置页顶栏与宿主内页面（`6a9379a`）、launcher 与壳层移除、配置落宿主目录。
+> - **待做**：P1.5 存储收敛为单快照（当前仍是 `settings.json` / `haptic.json` / `ui.json` 三文件）；P3 模块设置与调试页；P4 文案资源化（仅有 11 条资源，源码中仍有约 90 处中文字面量）；P5 残留清理与回归。
+
 ---
 
 ## 0. 使用说明
@@ -735,7 +739,7 @@ fun SettingsTopBar(hostName: String, onBack: (() -> Unit)?, onSwitchHost: () -> 
 
 ## 8. 阶段与闸门
 
-> 顺序不可调换：文案资源化（P4）要求 `.kt` 中不再有中文字面量，因此被取代的旧页面必须在 P2 就删除。
+> 顺序约定：P1.5（存储收敛）应在 P3 之前完成，避免后续页面改动两次；文案资源化（P4）要求 `.kt` 中不再有中文字面量，因此被取代的旧页面必须在 P2 就删除。
 
 ### P0 — 底座切换与宿主内 Activity
 
@@ -758,7 +762,7 @@ fun SettingsTopBar(hostName: String, onBack: (() -> Unit)?, onSwitchHost: () -> 
 
 建议 commit：`feat(base): 迁移到 YukiHook 底座并在宿主内启动设置页`
 
-### P1 — 配置落到宿主目录
+### P1 — 配置落到宿主目录（已完成，三文件版）
 
 1. 新增 `HostPaths`、`SettingsStore`（单快照读写 / `AtomicFile` / `Mutex` / `StateFlow` / `FileObserver` / 迁移 / 损坏恢复）。
 2. `RemoteConfig.kt` 改名 `SettingsModel.kt`，改为 `@Serializable` 的 `HostState` / `VibrationSettings` / `WaveformConfig` / `UiPrefs`，保留波形校验；宿主常量与显示名移到 `HostCatalog`；**同步更新全项目引用**。
@@ -774,7 +778,34 @@ fun SettingsTopBar(hostName: String, onBack: (() -> Unit)?, onSwitchHost: () -> 
 
 建议 commit：`feat(config): 配置改存宿主目录并支持文件热更新`
 
-### P2 — 设置页 UI（含移除 launcher）
+### P1.5 — 存储收敛为单快照（待做）
+
+现状是 `settings.json` / `haptic.json` / `ui.json` 三个文件、各自原子写、跨文件不原子；本节把它们合并为 §5 描述的 `state.json`。
+
+1. `HostPaths`：`settings()/haptic()/ui()` → `state()`，新增 `legacyDir()`。
+2. `SettingsModel`：新增 `@Serializable` 的 `HostState` / `VibrationSettings` / `WaveformConfig` / `UiPrefs`（`WaveformHaptic` 可保留原名）；保留波形校验与默认值；手写 `JSONObject` 编解码仅保留给旧文件迁移。
+3. `SettingsStore`：
+   - `Snapshot` → `HostState`，对外暴露 `StateFlow<HostState>`；
+   - `saveSettings` / `saveHaptic` / `saveUi` 三个入口合并为 `update(transform)`；
+   - 手写 `atomicWrite` 换成 `AtomicFile` + `Mutex`；
+   - `load()` 增加"旧三文件合并"迁移分支，迁移后移入 `config/legacy/`；
+   - 新增 `readExternal(host)`（只读一次性读取，供宿主切换）；
+   - 删除 `revision`，注入卡改用 `updated_at`。
+4. 调用点同步：`SettingsScreen`（改收 `StateFlow`）、`HostFabInjector`（FAB 位置走 `update`）、`ConfigTransfer`（信封格式 `{format, host, state}`）、`HookEntry`（`attach` 不变）。
+5. 依赖：加 `org.jetbrains.kotlin.plugin.serialization` 与 `kotlinx-serialization-json`。
+6. `schema` 升到 3；旧 `settings.json` 的 `schema = 2` 在迁移时读入即可，不需要额外分支。
+
+**闸门**
+
+- [ ] 旧三文件存在时首次启动能合并成 `state.json`，值不丢，旧文件进 `legacy/`。
+- [ ] 手工改 `state.json` 的 `settings` 与 `waveform`，1 秒内生效。
+- [ ] 写入过程中 `am force-stop` 宿主，重启后配置完整（无半截文件）。
+- [ ] 把 `state.json` 改成非法 JSON：沿用旧缓存，坏文件被改名为 `state.bad.<ts>.json`。
+- [ ] 导出/导入 JSON 与 `HostState` 结构一致。
+
+建议 commit：`refactor(config): 三文件合并为单快照 state.json`
+
+### P2 — 设置页 UI（含移除 launcher）（已完成，存储接入待 P1.5）
 
 1. `SettingsScreen.kt` → `SettingsContent(host, modifier, onOpenModuleSettings)`；数据源换 `SettingsStore`；删除同步状态提示；注入卡读进程内状态；删「复制到其他宿主」。
 2. 新增 `SettingsTopBar`、宿主选择弹层、非本宿主的只读态。
@@ -791,7 +822,7 @@ fun SettingsTopBar(hostName: String, onBack: (() -> Unit)?, onSwitchHost: () -> 
 
 建议 commit：`feat(ui): 设置页在宿主内复用并移除独立入口`
 
-### P3 — 模块设置与调试页
+### P3 — 模块设置与调试页（待做）
 
 1. `ModuleSettingsPage.kt`：颜色模式、配置导入导出（当前宿主）、帮助、关于/赞助。
 2. 调试与日志：开关、清除、导出；`DebugLog` 直写文件；`DebugScreen` 接入。
@@ -804,7 +835,7 @@ fun SettingsTopBar(hostName: String, onBack: (() -> Unit)?, onSwitchHost: () -> 
 
 建议 commit：`feat(ui): 模块设置与调试页并入宿主内设置页`
 
-### P4 — 文案资源化
+### P4 — 文案资源化（待做：现仅 11 条资源）
 
 按 §7 建 `strings.xml` / `values-en/strings.xml` / `arrays.xml`，替换全部字面量。
 
@@ -815,7 +846,7 @@ fun SettingsTopBar(hostName: String, onBack: (() -> Unit)?, onSwitchHost: () -> 
 
 建议 commit：`refactor(i18n): 文案迁移到字符串资源`
 
-### P5 — 清理与回归
+### P5 — 清理与回归（待做：`ConfigRepository` 等仍在）
 
 1. 删除 `RemoteService`、`LogService`、`ModulePrefs`、`ConfigRepository`、`ConfigStore`、`LiquidGlassBar` + `liquid/` + `miuixanim/`、`ui/theme/`、`WeTypeHookRApp.kt`。
 2. Manifest：去掉 `<service>` 与 `android:name`，只留 `<application>`（label/description）+ `queries`。
@@ -830,6 +861,8 @@ fun SettingsTopBar(hostName: String, onBack: (() -> Unit)?, onSwitchHost: () -> 
 建议 commit：`refactor!: 移除残留通道与依赖，完成宿主内设置页改造`
 
 ## 9. 文件清单
+
+> 下表按目标态列出。已完成的文件仅作对照；P1.5 的实际改动面见 §8 P1.5 第 1–5 条。
 
 **新增**
 
