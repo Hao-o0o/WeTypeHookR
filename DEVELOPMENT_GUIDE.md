@@ -283,11 +283,11 @@ API 102 行为约束：模块不得调用 `de.robv.android.xposed` 遗留 API；
 ```kotlin
 @Serializable
 data class HostState(
-    val schema: Int = 3,
-    @SerialName("updated_at") val updatedAt: Long = 0,
-    val settings: VibrationSettings = VibrationSettings(),
-    val waveform: WaveformConfig? = null,
-    val ui: UiPrefs = UiPrefs(),
+    val schema: Int = SettingsModel.SCHEMA_VERSION,   // 3
+    @SerialName("updated_at") val updatedAt: Long = 0L,
+    val settings: SettingsState = SettingsState(),
+    val waveform: CustomHapticConfig? = null,
+    val ui: UiState = UiState(),
 )
 ```
 
@@ -321,18 +321,18 @@ data class HostState(
 ### 7.4 写入
 
 ```kotlin
-suspend fun update(transform: (HostState) -> HostState) = mutex.withLock {
-    val next = transform(state.value).copy(updatedAt = System.currentTimeMillis())
-    val file = AtomicFile(HostPaths.state(context))
-    val out = file.startWrite()
-    try { out.write(json.encodeToString(next).toByteArray()); file.finishWrite(out) }
-    catch (t: Throwable) { file.failWrite(out); throw t }
-    _state.value = next
+@Synchronized
+fun update(context: Context, host: String, transform: (HostState) -> HostState): Boolean {
+    val next = transform(_state.value).copy(updatedAt = System.currentTimeMillis())
+    val ok = writeState(context, next)       // AtomicFile.startWrite / finishWrite
+    if (ok) apply(next)                       // 回填 StateFlow + HapticEngine 缓存
+    return ok
 }
 ```
 
 - `androidx.core.util.AtomicFile`：临时文件 + `fsync` + `rename`，写入中断不会留下半截文件。
-- 写入必须经 `SettingsStore.update`（`Mutex` 串行化），外部不得直接写文件。
+- 写入必须经 `SettingsStore.update`（`@Synchronized` 串行化），外部不得直接写文件。
+- 主线程调用点（FAB 落位、导入）走 `updateAsync`（内部单线程池），避免主线程写盘。
 - UI 滑杆 200ms 防抖后再提交，避免逐帧写盘。
 
 ### 7.5 读取与热更新
@@ -450,7 +450,7 @@ adb logcat -s YukiHook WETYPE_HOOK WETYPE_UI WETYPE_CFG WETYPE_FAB
 2. 不得手写 `META-INF/xposed/*`；入口与元数据由 KSP 生成。
 3. 资源包 ID 不得为 `0x7f`。
 4. 设置页必须是 `ModuleActivity` 子类，且三个生命周期方法与 `getClassLoader()` 都委托给 `delegate`。
-5. 配置只有一个权威源：宿主目录下的 `state.json`。不得引入 SharedPreferences、跨进程通道或其他副本；写入必须经 `SettingsStore.update`（`AtomicFile` + `Mutex`），不得直接写文件。
+5. 配置只有一个权威源：宿主目录下的 `state.json`。不得引入 SharedPreferences、跨进程通道或其他副本；写入必须经 `SettingsStore.update`（`AtomicFile` + 单锁），不得直接写文件。
 6. Hook 回调不做 IO、不加锁、不反射查找。
 7. 弹层只用 miuix `Overlay*`，且必须在 `Scaffold` 子树内。
 8. 文案只在 `res/values*/strings.xml` 与 `arrays.xml`；`.kt` 中不出现中文字面量。

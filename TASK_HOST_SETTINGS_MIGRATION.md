@@ -327,46 +327,48 @@ object HostPaths {
 ```kotlin
 @Serializable
 data class HostState(
-    val schema: Int = 3,
-    @SerialName("updated_at") val updatedAt: Long = 0,
-    val settings: VibrationSettings = VibrationSettings(),
-    val waveform: WaveformConfig? = null,
-    val ui: UiPrefs = UiPrefs(),
+    val schema: Int = SettingsModel.SCHEMA_VERSION,          // 3
+    @SerialName("updated_at") val updatedAt: Long = 0L,
+    val settings: SettingsState = SettingsState(),
+    val waveform: CustomHapticConfig? = null,
+    val ui: UiState = UiState(),
 )
 
 @Serializable
-data class VibrationSettings(
-    @SerialName("down_mode") val downMode: Int = 1,
-    @SerialName("up_mode") val upMode: Int = 1,
-    @SerialName("down_system") val downSystem: Int = 0,
-    @SerialName("up_system") val upSystem: Int = 3,
+data class SettingsState(
+    @SerialName("down_mode") val downIndex: Int = 1,
+    @SerialName("up_mode") val upIndex: Int = 1,
     @SerialName("down_duration") val downDuration: Float = 50f,
     @SerialName("down_strength") val downStrength: Float = 0.5f,
     @SerialName("up_duration") val upDuration: Float = 50f,
     @SerialName("up_strength") val upStrength: Float = 0.5f,
+    @SerialName("down_system") val downSystemIndex: Int = 0,
+    @SerialName("up_system") val upSystemIndex: Int = 3,
     @SerialName("theme_mode") val themeMode: Int = 2,
     @SerialName("debug_log") val debugLog: Boolean = false,
 )
 
 @Serializable
-data class WaveformConfig(
+data class CustomHapticConfig(
     val down: WaveformHaptic? = null,
     val up: WaveformHaptic? = null,
 )
 
 @Serializable
 data class WaveformHaptic(
-    val timings: List<Long>,
+    val timings: List<Long>,          // 由 LongArray 改为 List，便于序列化
     val amplitudes: List<Int>,
 )
 
 @Serializable
-data class UiPrefs(
+data class UiState(                   // 从 SettingsStore 内迁到模型
     @SerialName("fab_x") val fabX: Float = 0f,
     @SerialName("fab_y") val fabY: Float = 0.62f,
     @SerialName("color_mode") val colorMode: Int = 2,
 )
 ```
+
+命名沿用现有代码（`SettingsState` / `CustomHapticConfig` / `WaveformHaptic`），只新增 `HostState` 与 `UiState` 的位置调整，避免全项目改名。`WaveformHaptic` 的两组值改为 `List`，震动调用处用 `toLongArray()` / `toIntArray()` 还原。
 
 文件示例：
 
@@ -398,32 +400,32 @@ data class UiPrefs(
 ### 5.3 写入
 
 ```kotlin
-private val writeMutex = Mutex()
+private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
 
-suspend fun update(transform: (HostState) -> HostState) = writeMutex.withLock {
-    val next = transform(current()).copy(updatedAt = System.currentTimeMillis())
-    val af = AtomicFile(HostPaths.state(context))
-    val out = af.startWrite()
-    try {
-        out.write(json.encodeToString(next).toByteArray())
-        af.finishWrite(out)
-    } catch (t: Throwable) {
-        af.failWrite(out)
-        throw t
-    }
-    _state.value = next
+@Synchronized
+fun update(context: Context, host: String, transform: (HostState) -> HostState): Boolean {
+    val next = transform(_state.value).copy(updatedAt = System.currentTimeMillis())
+    val ok = writeState(context, next)        // AtomicFile.startWrite / finishWrite
+    if (ok) apply(next)                        // 回填 StateFlow + HapticEngine 缓存
+    return ok
+}
+
+/** 主线程调用点（FAB 落位、导入）走这个，避免在主线程写盘。 */
+fun updateAsync(context: Context, host: String, transform: (HostState) -> HostState) {
+    ioExecutor.execute { update(context.applicationContext, host, transform) }
 }
 ```
 
 - 用 `androidx.core.util.AtomicFile`（`core-ktx` 已引入）：内部走临时文件 + `fsync` + `rename`，并维护备份，写入中断不会留下半截文件。
-- 所有写操作经 `SettingsStore.update`，外部不得直接 `File.writeText`；写用 `Mutex` 串行化。
+- 所有写操作经 `SettingsStore.update`，外部不得直接 `File.writeText`；`@Synchronized` 串行化写入。
+- 不做 `suspend` 改造：整份文件约 1KB，写路径本就短，UI 侧已在 `Dispatchers.IO` 内调用，引入协程 API 只会让 Hook 启动路径和 `onDispose` 补写变复杂。
 - UI 侧滑杆仍是 200ms 防抖后调 `update`，避免逐帧写盘。
 
 ### 5.4 读取与热更新
 
 - 启动：`attach(context, host)` 读一次 → 解析 → 得到 `HostState` → 填充 `HapticEngine.cachedSettings` / `cachedCustomHaptic`。
 - 向 UI 暴露 `StateFlow<HostState>`，Compose 直接 `collectAsState()`，不再自己轮询文件。
-- `readExternal(host)`：只读地读一次另一个宿主的 `state.json`（不订阅、不写入），供宿主切换时查看。
+- `readExternal(host)`：只读地读一次另一个宿主的 `state.json`（拼 `Environment.getExternalStorageDirectory()/Android/data/<host>/files/haostoo/config/state.json`，失败返回 null），供宿主切换时查看。
 - Hook 侧监听 `FileObserver(configDir, CLOSE_WRITE or MOVED_TO)`，只处理 `state.json`：
   - 200ms 去抖；
   - `updatedAt` 与内存中的值相同则跳过（自写回环）；
@@ -764,36 +766,27 @@ fun SettingsTopBar(hostName: String, onBack: (() -> Unit)?, onSwitchHost: () -> 
 
 ### P1 — 配置落到宿主目录（已完成，三文件版）
 
-1. 新增 `HostPaths`、`SettingsStore`（单快照读写 / `AtomicFile` / `Mutex` / `StateFlow` / `FileObserver` / 迁移 / 损坏恢复）。
-2. `RemoteConfig.kt` 改名 `SettingsModel.kt`，改为 `@Serializable` 的 `HostState` / `VibrationSettings` / `WaveformConfig` / `UiPrefs`，保留波形校验；宿主常量与显示名移到 `HostCatalog`；**同步更新全项目引用**。
-3. `HookEntry` 中改为 `SettingsStore.attach(appContext, host)`；`HapticEngine` 缓存由它填充。
-4. FAB 位置与 `color_mode` 归入 `HostState.ui`，经 `SettingsStore.update` 落盘。
+当前实现：`HostPaths`（`settings.json` / `haptic.json` / `ui.json`）、`SettingsStore`（`Snapshot` + 手写 `atomicWrite` + `FileObserver`）、`SettingsModel`（`JSONObject` 编解码）、`HookEntry` 的 `attach`、FAB 位置落 `ui.json`。
 
-**闸门**
-
-- [ ] 手工改 `state.json`（`settings` 与 `waveform` 各一次），1 秒内震动行为变化。
-- [ ] 写入过程中强杀宿主进程，重启后配置仍是完整的一份（不出现半截文件）。
-- [ ] 构造旧 `config.xml` 可迁移出正确数值。
-- [ ] 把 `state.json` 改成非法 JSON：Hook 不崩、沿用旧缓存，坏文件被改名为 `state.bad.<ts>.json`。
-
-建议 commit：`feat(config): 配置改存宿主目录并支持文件热更新`
+下一节把它们收敛为单快照；收敛完成前不要在此之上继续加字段。
 
 ### P1.5 — 存储收敛为单快照（待做）
 
 现状是 `settings.json` / `haptic.json` / `ui.json` 三个文件、各自原子写、跨文件不原子；本节把它们合并为 §5 描述的 `state.json`。
 
 1. `HostPaths`：`settings()/haptic()/ui()` → `state()`，新增 `legacyDir()`。
-2. `SettingsModel`：新增 `@Serializable` 的 `HostState` / `VibrationSettings` / `WaveformConfig` / `UiPrefs`（`WaveformHaptic` 可保留原名）；保留波形校验与默认值；手写 `JSONObject` 编解码仅保留给旧文件迁移。
+2. `SettingsModel`：新增 `@Serializable` 的 `HostState` / `SettingsState` / `CustomHapticConfig` / `WaveformHaptic` / `UiState`；`WaveformHaptic` 的两组值改为 `List`；保留波形校验（改为 `isValidWaveform` / `sanitizeWaveform`）；手写 `JSONObject` 编解码只留作旧文件迁移。
 3. `SettingsStore`：
    - `Snapshot` → `HostState`，对外暴露 `StateFlow<HostState>`；
    - `saveSettings` / `saveHaptic` / `saveUi` 三个入口合并为 `update(transform)`；
-   - 手写 `atomicWrite` 换成 `AtomicFile` + `Mutex`；
+   - 手写 `atomicWrite` 换成 `AtomicFile` + `@Synchronized` 串行化，另加 `updateAsync`（内部单线程池）给主线程调用点；
    - `load()` 增加"旧三文件合并"迁移分支，迁移后移入 `config/legacy/`；
    - 新增 `readExternal(host)`（只读一次性读取，供宿主切换）；
-   - 删除 `revision`，注入卡改用 `updated_at`。
-4. 调用点同步：`SettingsScreen`（改收 `StateFlow`）、`HostFabInjector`（FAB 位置走 `update`）、`ConfigTransfer`（信封格式 `{format, host, state}`）、`HookEntry`（`attach` 不变）。
+   - 删除 `Snapshot.revision`；`HookRuntime.configRevision` / `SettingsModel.HookStatus.configRevision` 改为 `configUpdatedAt`，注入卡文案改为「配置更新于 %s」。
+4. 调用点同步：`SettingsScreen`（`SettingsStore.current` → `state.collectAsState()`，保存走 `update`）、`HostFabInjector`（类型换 `SettingsModel.UiState`，落位走 `updateAsync`）、`ConfigTransfer`（信封格式 `{format, host, state}`，兼容旧导出格式）、`HookEntry`（`SettingsStore.current.ui` → `state.value.ui`）、`HapticEngine`（波形转 `toLongArray()` / `toIntArray()`）。
 5. 依赖：加 `org.jetbrains.kotlin.plugin.serialization` 与 `kotlinx-serialization-json`。
 6. `schema` 升到 3；旧 `settings.json` 的 `schema = 2` 在迁移时读入即可，不需要额外分支。
+7. 删除 `ConfigRepository`（其 `snapshots` / `hookStatus` 职责并入 `SettingsStore` 与 `HookRuntime`）。
 
 **闸门**
 
@@ -874,10 +867,10 @@ fun SettingsTopBar(hostName: String, onBack: (() -> Unit)?, onSwitchHost: () -> 
 | `SettingsActivity.kt` | 宿主内设置页宿主容器（edge-to-edge、Compose） |
 | `SettingsTopBar.kt` | 标题 + 宿主副标题 + 点击切换 |
 | `HostPaths.kt` | 宿主目录路径 |
-| `SettingsStore.kt` | 单快照读写（`AtomicFile` + `Mutex`）/ `StateFlow` / `FileObserver` / `readExternal` 只读读取 / 迁移与损坏恢复 |
+| `SettingsStore.kt` | 单快照读写（`AtomicFile` + 单锁）/ `StateFlow` / `FileObserver` / `readExternal` 只读读取 / 迁移与损坏恢复 |
 | `HookRuntime.kt` | 进程内注入状态 |
 | `ModuleSettingsPage.kt` | 模块设置 / 调试 / 帮助 / 关于（可拆多文件） |
-| `SettingsModel.kt` | `@Serializable` 单快照模型（`HostState` / `VibrationSettings` / `WaveformConfig` / `UiPrefs`），含波形校验 |
+| `SettingsModel.kt` | `@Serializable` 单快照模型（`HostState` / `SettingsState` / `CustomHapticConfig` / `WaveformHaptic` / `UiState`），含波形校验 |
 
 **改造**
 
@@ -908,7 +901,7 @@ fun SettingsTopBar(hostName: String, onBack: (() -> Unit)?, onSwitchHost: () -> 
 2. **不要**把资源包 ID 设为 `0x7f`。
 3. **不要**让非 `ModuleActivity` 子类作为设置页（注册机制不接管）。
 4. **不要**在宿主进程里用 `createPackageContext(模块包)` 取资源（包可见性会拒），模块资源已由框架注入。
-5. **不要**给配置引入第二个权威源（SharedPreferences / 云端 / 任何跨进程通道）；`state.json` 是唯一来源，写入必须经 `SettingsStore.update`（`AtomicFile` + `Mutex`）。
+5. **不要**给配置引入第二个权威源（SharedPreferences / 云端 / 任何跨进程通道）；`state.json` 是唯一来源，写入必须经 `SettingsStore.update`（`AtomicFile` + 单锁）。
 6. **不要**在 Hook 的触摸回调里做文件 IO、加锁或反射查找。
 7. **不要**用 `androidx.compose.ui.window.Dialog` 等自绘弹层替代 miuix `Overlay*`。
 8. **不要**开启热重载（设置页存活时会被框架拒绝）。
