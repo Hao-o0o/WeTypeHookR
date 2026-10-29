@@ -30,7 +30,7 @@ object HostFabInjector {
     fun isTargetSettingsActivity(hostPackage: String, activityClass: String): Boolean =
         HostCatalog.settingsActivity(hostPackage) == activityClass
 
-    fun attach(activity: Activity, hostPackage: String, ui: SettingsStore.UiState) {
+    fun attach(activity: Activity, hostPackage: String, ui: SettingsModel.UiState) {
         val decor = activity.window?.decorView as? ViewGroup ?: return
         if (decor.findViewWithTag<View>(VIEW_TAG) != null) return
 
@@ -52,7 +52,7 @@ object HostFabInjector {
         decor: ViewGroup,
         fab: View,
         size: Int,
-        ui: SettingsStore.UiState,
+        ui: SettingsModel.UiState,
     ) {
         val maxX = (decor.width - size).coerceAtLeast(0)
         val maxY = (decor.height - size).coerceAtLeast(0)
@@ -64,7 +64,7 @@ object HostFabInjector {
         decor: ViewGroup,
         fab: View,
         size: Int,
-        ui: SettingsStore.UiState,
+        ui: SettingsModel.UiState,
         resources: Resources,
     ) {
         val touchSlop = dp(resources, 8f).toFloat()
@@ -122,7 +122,7 @@ object HostFabInjector {
         decor: ViewGroup,
         fab: View,
         size: Int,
-        ui: SettingsStore.UiState,
+        ui: SettingsModel.UiState,
     ) {
         val maxX = (decor.width - size).coerceAtLeast(0).toFloat()
         val maxY = (decor.height - size).coerceAtLeast(0).toFloat()
@@ -137,15 +137,14 @@ object HostFabInjector {
 
         runCatching {
             val context = fab.context
-            val host = context.packageName
-            SettingsStore.saveUi(
-                context,
-                host,
-                ui.copy(
-                    fabX = (target / maxX).coerceIn(0f, 1f),
-                    fabY = (fab.translationY / maxY).coerceIn(0f, 1f),
-                ),
-            )
+            SettingsStore.updateAsync(context, context.packageName) { state ->
+                state.copy(
+                    ui = state.ui.copy(
+                        fabX = (target / maxX).coerceIn(0f, 1f),
+                        fabY = (fab.translationY / maxY).coerceIn(0f, 1f),
+                    ),
+                )
+            }
         }
     }
 

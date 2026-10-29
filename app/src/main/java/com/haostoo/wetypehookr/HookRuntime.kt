@@ -3,7 +3,7 @@ package com.haostoo.wetypehookr
 /**
  * 进程内注入状态。
  *
- * 与配置完全分离：只描述「Hook 是否装好、最近一次生效的 revision、心跳时间」，
+ * 与配置完全分离：只描述「Hook 是否装好、配置更新时间、心跳时间」，
  * 供宿主设置页的注入状态卡直接读取（同进程，无需 IPC）。
  */
 object HookRuntime {
@@ -13,9 +13,9 @@ object HookRuntime {
     var hookInstalled: Boolean = false
         private set
 
-    /** 最近一次生效的配置 revision。 */
+    /** 最近一次生效的配置更新时间（= state.json 的 updated_at）。 */
     @Volatile
-    var configRevision: Long = 0L
+    var configUpdatedAt: Long = 0L
         private set
 
     /** 最近心跳时间。 */
@@ -38,8 +38,20 @@ object HookRuntime {
         heartbeatAt = System.currentTimeMillis()
     }
 
-    fun onConfigApplied(revision: Long) {
-        configRevision = revision
+    /** 当前进程的注入状态；未加载时返回 null（页面显示「未观测到注入」）。 */
+    fun status(): SettingsModel.HookStatus? {
+        if (hostPackage.isEmpty()) return null
+        return SettingsModel.HookStatus(
+            hookInstalled = hookInstalled,
+            moduleVersion = BuildConfig.VERSION_NAME,
+            frameworkName = null,
+            configUpdatedAt = configUpdatedAt,
+            heartbeatAt = heartbeatAt,
+        )
+    }
+
+    fun onConfigApplied(updatedAt: Long) {
+        configUpdatedAt = updatedAt
         heartbeatAt = System.currentTimeMillis()
     }
 }

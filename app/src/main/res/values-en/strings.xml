@@ -1,11 +1,127 @@
+<?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Vibration</string>
     <string name="module_description">Custom two-stage haptic feedback for WeType and Doubao IME</string>
 
+    <string name="action_back">Back</string>
+    <string name="action_cancel">Cancel</string>
+    <string name="action_confirm">OK</string>
+    <string name="action_save">Save</string>
+    <string name="action_close">Close</string>
+    <string name="action_switch_host">Switch host</string>
+    <string name="action_reset_default">Restore defaults</string>
+    <string name="action_reload_ime">Reload IME</string>
+    <string name="action_export_config">Export config</string>
+    <string name="action_import_config">Import config</string>
+    <string name="action_export_logs">Export logs</string>
+    <string name="action_clear_logs">Clear logs</string>
+    <string name="action_save_image">Save image</string>
+
+    <string name="state_loading">Loading…</string>
+    <string name="state_unknown">Unknown</string>
     <string name="host_name_wetype">WeType</string>
     <string name="host_name_doubao">Doubao IME</string>
-    <string name="state_unknown">Unknown</string>
+    <string name="host_picker_title">Choose host</string>
+    <string name="host_no_access_hint">Cannot read that host\'s config (separate app data)</string>
 
-    <string name="action_back">Back</string>
+    <string name="title_injection">Injection status</string>
+    <string name="injection_none">Injection not observed</string>
+    <string name="injection_none_hint">Open the IME and switch the keyboard once</string>
+    <string name="injection_hook_missing">Module loaded, hook not installed</string>
+    <string name="injection_hook_missing_hint">The IME version may have changed; report with logs</string>
+    <string name="injection_ok">Hook injected</string>
+    <string name="injection_ok_hint">Config updated %1$s</string>
+    <string name="injection_heartbeat">Last heartbeat %1$s · module %2$s</string>
+
+    <string name="title_down_vibration">Press vibration</string>
+    <string name="title_up_vibration">Release vibration</string>
+    <string name="title_system_haptic_style">System haptic style</string>
+    <string name="label_down">Press</string>
+    <string name="label_up">Release</string>
+    <string name="label_curve_preview">Curve preview</string>
+    <string name="curve_summary">Amplitude 0–255 · total %1$d ms (preview only)</string>
+    <string name="action_setup_waveform">Edit waveform</string>
+    <string name="waveform_not_set">Not set · default 4-segment waveform will load</string>
+    <string name="waveform_set">Configured · %1$d segments</string>
+    <string name="duration_label">%1$s duration: %2$d ms</string>
+    <string name="strength_label">%1$s strength: %2$d%%</string>
+    <string name="action_test">Test %1$s vibration</string>
+
+    <string name="reset_confirm_message">Restore this host\'s vibration settings and waveform to defaults?</string>
+    <string name="reset_done">Defaults restored</string>
+    <string name="reload_summary">Restart the target IME process via root</string>
+    <string name="reload_ok">Done: %1$s restarted</string>
+    <string name="reload_no_root">Failed: no root</string>
+    <string name="reload_no_su">Failed: su not found</string>
+    <string name="reload_failed">Failed: %1$s</string>
+
+    <string name="waveform_save_failed">Failed to save waveform</string>
+    <string name="waveform_saved">%1$s waveform saved</string>
+    <string name="waveform_invalid">Invalid waveform data</string>
+    <string name="waveform_legacy_warn">Legacy waveform data is inconsistent; a default draft was loaded</string>
+    <string name="read_config_failed">Failed to read config</string>
+
+    <string name="title_down_waveform">Press waveform</string>
+    <string name="title_up_waveform">Release waveform</string>
+    <string name="segment_count_label">Segments (%1$d–%2$d)</string>
+    <string name="segment_index">Segment %1$d</string>
+    <string name="segment_first_fixed">0 (fixed)</string>
+    <string name="label_timing_ms">Duration (ms)</string>
+    <string name="label_amplitude">Amplitude (0–255)</string>
+    <string name="label_timing_range">Duration (ms, 0–%1$d)</string>
+    <string name="label_timing_fixed_hint">Duration: 0 ms (first segment is fixed)</string>
+    <string name="label_amplitude_range">Amplitude (0–%1$d)</string>
+    <string name="waveform_sync_hint">Changes sync to the curve and rows below</string>
+    <string name="waveform_down_desc">Custom waveform on press; the curve is a preview</string>
+    <string name="waveform_up_desc">Custom waveform on release; the curve is a preview</string>
+    <string name="waveform_editor_summary">Amplitude 0–255 · total %1$d ms · selected: segment %2$d (%3$d ms, %4$d)</string>
+    <string name="waveform_curve_a11y">Waveform preview; tap a node to edit that segment</string>
+
+    <string name="input_integer_required">Enter an integer</string>
+    <string name="input_range">Range %1$d–%2$d</string>
+    <string name="error_segment_count">Segment count must be %1$d–%2$d</string>
+    <string name="error_segment_incomplete">Incomplete segment data</string>
+    <string name="error_first_timing_zero">First segment duration must be 0</string>
+    <string name="error_timing_negative">Segment %1$d duration cannot be negative</string>
+    <string name="error_timing_too_long">Segment %1$d duration cannot exceed %2$d ms</string>
+    <string name="error_amplitude_range">Segment %1$d amplitude must be 0–%2$d</string>
+    <string name="error_no_positive_timing">At least one segment must exceed 0 ms</string>
+
+    <string name="title_module_settings">Module settings</string>
+    <string name="title_color_mode">Color mode</string>
+    <string name="title_debug_logs">Debug &amp; logs</string>
+    <string name="summary_debug_logs">Write categorized logs to the host config dir</string>
+    <string name="summary_clear_logs">Delete this host\'s logs</string>
+    <string name="summary_export_logs">Zip this host\'s logs</string>
+    <string name="toast_logs_cleared">Logs cleared</string>
+    <string name="toast_logs_exported">Logs exported</string>
+    <string name="toast_logs_empty">No logs to export</string>
+    <string name="toast_export_failed">Export failed: %1$s</string>
+    <string name="toast_config_exported">Config exported</string>
+    <string name="toast_config_imported">Config imported</string>
+    <string name="toast_read_file_failed">Failed to read file</string>
+    <string name="error_import_format">Import failed: bad file format</string>
+    <string name="summary_export_config">Export this host\'s settings and waveform (JSON)</string>
+    <string name="summary_import_config">Restore this host\'s settings from JSON</string>
+
+    <string name="title_help">Help</string>
+    <string name="summary_help">Usage and waveform format</string>
+    <string name="help_load_failed">Failed to load. Check network or read the README</string>
+
+    <string name="title_about">About</string>
+    <string name="title_repo">Repository</string>
+    <string name="title_coolapk">Coolapk</string>
+    <string name="title_channel">Channel</string>
+    <string name="title_sponsor">Sponsor</string>
+    <string name="summary_sponsor">Scan to support the author, or save the image first</string>
+    <string name="sponsor_qr_a11y">Sponsor QR code</string>
+    <string name="toast_saved_to_gallery">Saved to Pictures/WeDouVibrator</string>
+    <string name="toast_save_failed">Save failed</string>
+    <string name="link_unavailable">Link not available</string>
+    <string name="toast_open_link_failed">Cannot open link</string>
     <string name="toast_open_settings_failed">Cannot open settings inside the IME</string>
+
+    <string name="read_only_hint">Read-only view</string>
+    <string name="action_import_legacy">Import legacy config</string>
+    <string name="summary_import_legacy">Migrate settings from an old config.xml (once)</string>
 </resources>

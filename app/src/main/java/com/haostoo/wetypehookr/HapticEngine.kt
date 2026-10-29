@@ -18,7 +18,7 @@ object HapticEngine {
     /** 宿主侧当前生效配置（由 [SettingsStore] 读取并热更新）。 */
     @Volatile
     var cachedSettings: SettingsModel.SettingsState =
-        SettingsModel.SettingsState(0, 0, 50f, 0.5f, 50f, 0.5f, 0, 0)
+        SettingsModel.SettingsState()
 
     /** 宿主侧当前生效波形（由 [SettingsStore] 读取并热更新）。 */
     @Volatile
@@ -105,7 +105,11 @@ object HapticEngine {
                         ?: if (isDown) cachedCustomHaptic?.down else cachedCustomHaptic?.up
                     w?.let {
                         vibrator.vibrate(
-                            android.os.VibrationEffect.createWaveform(it.timings, it.amplitudes, -1),
+                            android.os.VibrationEffect.createWaveform(
+                                it.timings.toLongArray(),
+                                it.amplitudes.toIntArray(),
+                                -1,
+                            ),
                         )
                     }
                 }

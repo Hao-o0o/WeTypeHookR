@@ -87,8 +87,7 @@ private val SYSTEM_HAPTICS = listOf(
 @Composable
 fun HostSettingsScreen(hostPackage: String, onBack: () -> Unit) {
     val context = LocalContext.current
-    val snapshots by ConfigRepository.snapshots.collectAsState()
-    val snapshot = snapshots[hostPackage]
+    val hostState by SettingsStore.state.collectAsState()
 
     var state by remember(hostPackage) { mutableStateOf<SettingsModel.SettingsState?>(null) }
     var waveformConfig by remember(hostPackage) { mutableStateOf<SettingsModel.CustomHapticConfig?>(null) }
@@ -98,36 +97,29 @@ fun HostSettingsScreen(hostPackage: String, onBack: () -> Unit) {
     var waveformWarning by remember { mutableStateOf<String?>(null) }
     var showResetDialog by remember { mutableStateOf(false) }
     var hostVersion by remember(hostPackage) { mutableStateOf<String?>(null) }
-    var hookStatus by remember(hostPackage) { mutableStateOf<SettingsModel.HookStatus?>(null) }
 
     LaunchedEffect(hostPackage) {
-        withContext(Dispatchers.IO) {
-            // 页面运行在宿主进程内：配置直接读宿主目录，状态直接读进程内 HookRuntime。
-            ConfigRepository.refresh(context, hostPackage)
-            hostVersion = HostInfo.versionText(context, hostPackage)
-            hookStatus = ConfigRepository.hookStatus(hostPackage)
-        }
-    }
-
-    // 配置 revision 变化意味着 Hook 可能重新上报过状态，顺带刷新一次注入卡。
-    LaunchedEffect(snapshot?.revision) {
-        withContext(Dispatchers.IO) { hookStatus = ConfigRepository.hookStatus(hostPackage) }
+        withContext(Dispatchers.IO) { hostVersion = HostInfo.versionText(context, hostPackage) }
     }
 
     // 快照变化回流到 UI；拖动期间有未落盘的本地状态时不覆盖，避免滑块跳动。
-    LaunchedEffect(snapshot) {
-        val s = snapshot ?: return@LaunchedEffect
+    LaunchedEffect(hostState) {
         if (pendingSave == null) {
-            state = s.settings
-            waveformConfig = s.waveform
+            state = hostState.settings
+            waveformConfig = hostState.waveform
         }
     }
+
+    // 注入状态直接读进程内状态：同进程、无心跳文件、无延迟。
+    val hookStatus = HookRuntime.status()
 
     // 拖动/连续点击期间只更新本地状态，停止操作 250ms 后自动保存（避免逐帧 Binder / 文件 IO）。
     LaunchedEffect(pendingSave) {
         val s = pendingSave ?: return@LaunchedEffect
         delay(250)
-        withContext(Dispatchers.IO) { ConfigRepository.saveSettings(context, hostPackage, s) }
+        withContext(Dispatchers.IO) {
+            SettingsStore.update(context, hostPackage) { it.copy(settings = s) }
+        }
         pendingSave = null
     }
 
@@ -136,18 +128,11 @@ fun HostSettingsScreen(hostPackage: String, onBack: () -> Unit) {
     DisposableEffect(hostPackage) {
         onDispose {
             if (pendingSave != null) {
-                latestState?.let { ConfigRepository.saveSettings(context, hostPackage, it) }
+                latestState?.let { pending ->
+                    SettingsStore.update(context, hostPackage) { it.copy(settings = pending) }
+                }
             }
         }
-    }
-
-    val syncNotice = when {
-        snapshot == null -> null
-        snapshot.conflict -> "本地有与远端冲突的修改，已保留本地版本，请确认后再编辑"
-        snapshot.state == SyncState.PENDING_SYNC -> "已保存，等待框架同步"
-        snapshot.state == SyncState.OFFLINE_CACHE || snapshot.state == SyncState.DEFAULT ->
-            "框架未连接，当前为最后一次已知配置；修改将在连接后自动同步"
-        else -> null
     }
 
     fun toast(msg: String) = Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
@@ -160,7 +145,8 @@ fun HostSettingsScreen(hostPackage: String, onBack: () -> Unit) {
     fun saveWaveform(isDown: Boolean, wave: SettingsModel.WaveformHaptic) {
         val base = waveformConfig ?: SettingsModel.defaultCustomHaptic()
         val merged = if (isDown) base.copy(down = wave) else base.copy(up = wave)
-        if (!ConfigRepository.saveWaveform(context, hostPackage, merged)) {
+        val saved = SettingsStore.update(context, hostPackage) { it.copy(waveform = merged) }
+        if (!saved) {
             toast("波形保存失败")
             return
         }
@@ -194,7 +180,12 @@ fun HostSettingsScreen(hostPackage: String, onBack: () -> Unit) {
     }
 
     fun resetToDefault() {
-        ConfigRepository.resetHost(context, hostPackage)
+        SettingsStore.update(context, hostPackage) {
+            it.copy(
+                settings = SettingsModel.defaultSettings(),
+                waveform = SettingsModel.defaultCustomHaptic(),
+            )
+        }
         state = SettingsModel.defaultSettings()
         waveformConfig = SettingsModel.defaultCustomHaptic()
         toast("已恢复默认配置")
@@ -206,7 +197,7 @@ fun HostSettingsScreen(hostPackage: String, onBack: () -> Unit) {
         }
     }
 
-    val dark = SettingsStore.current.ui.colorMode.let {
+    val dark = hostState.ui.colorMode.let {
         if (it == 0) false else if (it == 1) true else isSystemInDarkTheme()
     }
     val scrollBehavior = MiuixScrollBehavior()
@@ -279,7 +270,6 @@ fun HostSettingsScreen(hostPackage: String, onBack: () -> Unit) {
                         hostPackage = hostPackage,
                         hostVersion = hostVersion,
                         hookStatus = hookStatus,
-                        syncNotice = syncNotice,
                         scrollBehavior = scrollBehavior,
                         modifier = Modifier
                             .padding(padding)
@@ -325,7 +315,6 @@ private fun HostDetailContent(
     hostPackage: String,
     hostVersion: String?,
     hookStatus: SettingsModel.HookStatus?,
-    syncNotice: String?,
     scrollBehavior: ScrollBehavior,
     modifier: Modifier = Modifier,
 ) {
@@ -340,17 +329,6 @@ private fun HostDetailContent(
         Spacer(Modifier.height(12.dp))
         InjectionCard(hookStatus = hookStatus)
         Spacer(Modifier.height(12.dp))
-        if (syncNotice != null) {
-            Card(modifier = Modifier.fillMaxWidth(), insideMargin = PaddingValues(0.dp)) {
-                Text(
-                    text = syncNotice,
-                    fontSize = 13.sp,
-                    color = MiuixTheme.colorScheme.onSurfaceContainerVariant,
-                    modifier = Modifier.padding(16.dp),
-                )
-            }
-            Spacer(Modifier.height(12.dp))
-        }
         VibrationCard(
             isDown = true,
             state = state,
@@ -401,11 +379,29 @@ private fun HostIdentityCard(hostPackage: String, hostVersion: String?) {
 private fun InjectionCard(hookStatus: SettingsModel.HookStatus?) {
     Card(modifier = Modifier.fillMaxWidth(), insideMargin = PaddingValues(0.dp)) {
         Column(modifier = Modifier.padding(16.dp)) {
-            Text(text = "注入状态", fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
-            val (title, detail) = when {
-                hookStatus == null -> "未观测到注入" to "打开输入法并切换一次键盘后再回来查看"
-                !hookStatus.hookInstalled -> "模块已加载，Hook 未安装" to "输入法版本可能已变更，可通过日志反馈"
-                else -> "Hook 已注入" to "当前生效配置 revision ${hookStatus.configRevision}"
+            Text(
+                text = stringResource(R.string.title_injection),
+                fontSize = 16.sp,
+                fontWeight = FontWeight.SemiBold,
+            )
+            val title: String
+            val detail: String
+            when {
+                hookStatus == null -> {
+                    title = stringResource(R.string.injection_none)
+                    detail = stringResource(R.string.injection_none_hint)
+                }
+                !hookStatus.hookInstalled -> {
+                    title = stringResource(R.string.injection_hook_missing)
+                    detail = stringResource(R.string.injection_hook_missing_hint)
+                }
+                else -> {
+                    title = stringResource(R.string.injection_ok)
+                    detail = stringResource(
+                        R.string.injection_ok_hint,
+                        HostInfo.formatTime(hookStatus.configUpdatedAt),
+                    )
+                }
             }
             Text(
                 text = title,
@@ -420,7 +416,11 @@ private fun InjectionCard(hookStatus: SettingsModel.HookStatus?) {
             )
             if (hookStatus != null) {
                 Text(
-                    text = "最近心跳 ${HostInfo.formatTime(hookStatus.heartbeatAt)} · 模块 ${hookStatus.moduleVersion}",
+                    text = stringResource(
+                        R.string.injection_heartbeat,
+                        HostInfo.formatTime(hookStatus.heartbeatAt),
+                        hookStatus.moduleVersion,
+                    ),
                     fontSize = 12.sp,
                     color = MiuixTheme.colorScheme.onSurfaceContainerVariant,
                     modifier = Modifier.padding(top = 6.dp),

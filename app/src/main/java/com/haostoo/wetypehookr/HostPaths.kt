@@ -1,6 +1,7 @@
 package com.haostoo.wetypehookr
 
 import android.content.Context
+import android.os.Environment
 import java.io.File
 
 /**
@@ -13,19 +14,39 @@ object HostPaths {
 
     private const val ROOT = "haostoo"
 
+    private const val EXTERNAL_ANDROID = "Android/data"
+
     fun root(context: Context): File =
         File(context.getExternalFilesDir(null) ?: context.filesDir, ROOT).apply { mkdirs() }
 
     fun configDir(context: Context): File = File(root(context), "config").apply { mkdirs() }
 
-    fun settings(context: Context): File = File(configDir(context), "settings.json")
+    /** 唯一配置快照。 */
+    fun state(context: Context): File = File(configDir(context), "state.json")
 
-    fun haptic(context: Context): File = File(configDir(context), "haptic.json")
-
-    fun ui(context: Context): File = File(configDir(context), "ui.json")
+    /** 迁移后的旧文件留档目录。 */
+    fun legacyDir(context: Context): File = File(configDir(context), "legacy").apply { mkdirs() }
 
     fun logs(context: Context): File = File(root(context), "logs").apply { mkdirs() }
 
-    /** 旧版（文件型）配置位置，仅用于一次性迁移。 */
-    fun legacyConfig(context: Context): File = File(configDir(context), "config.xml")
+    // ================= 旧文件（仅迁移与备份用） =================
+
+    fun legacySettings(context: Context): File = File(configDir(context), "settings.json")
+
+    fun legacyHaptic(context: Context): File = File(configDir(context), "haptic.json")
+
+    fun legacyUi(context: Context): File = File(configDir(context), "ui.json")
+
+    fun legacyXml(context: Context): File = File(configDir(context), "config.xml")
+
+    /**
+     * 另一个宿主 `state.json` 的只读路径。
+     *
+     * 不同应用的外部私有目录在 Android 11+ 默认不可互访，读取失败是预期结果，
+     * 调用方据此进入「不可读」只读态。
+     */
+    fun externalState(host: String): File = File(
+        File(File(Environment.getExternalStorageDirectory(), EXTERNAL_ANDROID), "$host/files"),
+        "$ROOT/config/state.json",
+    )
 }

@@ -105,9 +105,8 @@ class WaveDraft(timings0: List<Int>, amps0: List<Int>) {
 
     fun build(): SettingsModel.WaveformHaptic? {
         if (validate() != null) return null
-        val t = LongArray(count) { timings[it].toLong() }
-        val a = IntArray(count) { amps[it] }
-        t[0] = 0
+        val t = List(count) { index -> if (index == 0) 0L else timings[index].toLong() }
+        val a = List(count) { amps[it] }
         return SettingsModel.WaveformHaptic(t, a)
     }
 
@@ -132,7 +131,7 @@ private fun linearSample(xs: FloatArray, ys: FloatArray, x: Float): Float {
 fun isEditableWaveform(w: SettingsModel.WaveformHaptic?): Boolean {
     if (w == null) return false
     val n = w.timings.size
-    return n in MIN_SEGMENTS..MAX_SEGMENTS && w.amplitudes.size == n && w.timings[0] == 0L
+    return SettingsModel.isValidWaveform(w)
 }
 
 /**

@@ -2,6 +2,7 @@ plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.plugin.compose")
     id("com.google.devtools.ksp")
+    id("org.jetbrains.kotlin.plugin.serialization")
 }
 
 android {
@@ -93,6 +94,8 @@ dependencies {
     ksp("com.highcapable.yukihookapi:yukihook-compiler:1.5.0")
     // ModuleActivity 需要 AppCompat 宿主主题
     implementation("androidx.appcompat:appcompat:1.7.1")
+    // 配置序列化（单快照 state.json）
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.9.0")
     implementation("top.yukonga.miuix.kmp:miuix-ui-android:0.9.3")
     implementation("top.yukonga.miuix.kmp:miuix-preference-android:0.9.3")
     implementation("top.yukonga.miuix.kmp:miuix-icons-android:0.9.3")

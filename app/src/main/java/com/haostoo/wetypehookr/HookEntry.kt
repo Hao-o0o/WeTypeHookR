@@ -84,7 +84,7 @@ object HookEntry : YukiHookXposedModule {
                 after {
                     val activity = instanceOrNull as? Activity ?: return@after
                     if (!HostFabInjector.isTargetSettingsActivity(host, activity.javaClass.name)) return@after
-                    HostFabInjector.attach(activity, host, SettingsStore.current.ui)
+                    HostFabInjector.attach(activity, host, SettingsStore.state.value.ui)
                 }
             }
             Log.i(TAG, "fab hook installed: $host")

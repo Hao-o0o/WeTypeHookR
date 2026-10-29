@@ -1,67 +1,54 @@
 package com.haostoo.wetypehookr
 
 import android.content.Context
+import android.os.FileObserver
+import android.util.Log
+import androidx.core.util.AtomicFile
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.serialization.encodeToString
+import java.io.File
+import java.io.FileOutputStream
+import java.util.concurrent.Executors
 
 /**
- * 宿主目录中的配置读写与热更新。
+ * 单快照配置仓库：`<host>/files/haostoo/config/state.json` 是唯一权威来源。
  *
- * 设计要点：
- * - 文件是唯一权威源：UI 只写文件，Hook 只读；写完后由 [android.os.FileObserver] 感知变化。
- * - 写入原子化：临时文件 → `fd.sync()` → 覆盖重命名，避免读到半截 JSON。
- * - 解析失败保留上一份有效缓存，绝不让输入法崩溃。
+ * - 写：`update` → `AtomicFile`（临时文件 + fsync + rename，自带备份）+ 单锁串行化；
+ * - 读：向 UI 暴露 [state]（`StateFlow`），Compose 直接订阅；
+ * - 热更新：`FileObserver` 只盯 `state.json`，200ms 去抖，`updated_at` 相同则跳过（自写回环）；
+ * - 损坏：非法内容改名为 `state.bad.<时间戳>.json` 留证，退回默认值继续跑；
+ * - 迁移：旧三件套 / 旧 `config.xml` 一次性合并，旧文件移入 `config/legacy/`。
  */
 object SettingsStore {
 
     private const val TAG = "WETYPE_CFG"
 
-    /** 当前 settings.json 结构版本。 */
-    private const val SCHEMA = 2
-
-    /** 热更新去抖窗口（毫秒）。 */
     private const val DEBOUNCE_MS = 200L
 
-    /** FAB 位置与配色（宿主设置页自己的 UI 状态）。 */
-    data class UiState(
-        val fabX: Float = 0f,
-        val fabY: Float = DEFAULT_FAB_Y,
-        val colorMode: Int = 2,
-    ) {
-        companion object {
-            const val DEFAULT_FAB_Y = 0.62f
-        }
+    private const val STATE_NAME = "state.json"
+
+    private val _state = MutableStateFlow(SettingsModel.HostState())
+
+    /** 当前宿主的完整状态；UI 订阅它，Hook 只读 [HapticEngine] 的缓存。 */
+    val state: StateFlow<SettingsModel.HostState> = _state.asStateFlow()
+
+    private val ioExecutor = Executors.newSingleThreadExecutor { runnable ->
+        Thread(runnable, "haostoo-cfg").apply { isDaemon = true }
     }
 
-    /** 一次完整读取的结果。 */
-    data class Snapshot(
-        val settings: SettingsModel.SettingsState,
-        val haptic: SettingsModel.CustomHapticConfig?,
-        val ui: UiState,
-        val revision: Long,
-    )
-
-    /** 当前生效缓存，Hook 侧只读这份内存快照。 */
-    @Volatile
-    var current: Snapshot = Snapshot(
-        settings = SettingsModel.defaultSettings(),
-        haptic = null,
-        ui = UiState(),
-        revision = 0L,
-    )
-        private set
-
-    private var observer: Any? = null
+    private var observer: FileObserver? = null
 
     private var watchedHost: String? = null
 
     private var appContext: Context? = null
 
-    private val debounceHandler = Debouncer()
+    private val debouncer = Debouncer()
 
-    /**
-     * 宿主进程启动时调用一次：读取当前宿主配置并挂上文件监听。
-     *
-     * 之后 [HapticEngine.cachedSettings] / [HapticEngine.cachedCustomHaptic] 会随文件变化自动刷新。
-     */
+    // ================= 生命周期 =================
+
+    /** 宿主进程启动时调用一次：读快照并挂文件监听。 */
     @Synchronized
     fun attach(context: Context, host: String) {
         if (watchedHost == host) return
@@ -70,202 +57,186 @@ object SettingsStore {
         appContext = context.applicationContext
         watchedHost = host
 
-        val snapshot = load(context, host)
-        current = snapshot
-        publish(snapshot)
+        apply(readOrMigrate(context, host))
         startWatching(context, host)
     }
 
+    /** 只读地取当前内存快照。 */
+    fun current(): SettingsModel.HostState = _state.value
+
+    // ================= 写 =================
+
     /**
-     * 读取某个宿主的全部配置；`settings.json` 不存在时按迁移顺序初始化并落盘。
+     * 以 transform 生成下一份状态并落盘，成功后回填 `StateFlow` 与 Hook 缓存。
      *
-     * 读取失败（目录不可访问、JSON 非法）时返回默认值，不抛异常。
+     * 所有写操作都必须走这里，外部不得直接写文件。
      */
-    fun load(context: Context, host: String): Snapshot {
-        val settingsFile = HostPaths.settings(context)
-        val settings = if (settingsFile.isFile) {
-            readSettings(settingsFile) ?: migrate(context).also { writeSettings(context, it) }
-        } else {
-            migrate(context).also { writeSettings(context, it) }
+    @Synchronized
+    fun update(
+        context: Context,
+        host: String,
+        transform: (SettingsModel.HostState) -> SettingsModel.HostState,
+    ): Boolean {
+        val next = transform(_state.value).copy(
+            schema = SettingsModel.SCHEMA_VERSION,
+            updatedAt = System.currentTimeMillis(),
+        )
+        val ok = writeState(context.applicationContext ?: context, next)
+        if (ok) apply(next)
+        return ok
+    }
+
+    /** 主线程调用点（FAB 落位、导入）走这个，避免在主线程写盘。 */
+    fun updateAsync(
+        context: Context,
+        host: String,
+        transform: (SettingsModel.HostState) -> SettingsModel.HostState,
+    ) {
+        val app = context.applicationContext
+        ioExecutor.execute { update(app, host, transform) }
+    }
+
+    // ================= 读 =================
+
+    /** 另一个宿主的一次性只读读取；读不到（目录不可互访 / 不存在）返回 null。 */
+    fun readExternal(host: String): SettingsModel.HostState? = runCatching {
+        val file = HostPaths.externalState(host)
+        if (!file.isFile) return null
+        SettingsModel.json.decodeFromString(SettingsModel.HostState.serializer(), file.readText())
+    }.onFailure { Log.w(TAG, "readExternal failed: $host", it) }.getOrNull()
+
+    /** 重新从磁盘加载当前宿主快照（导出、切回本宿主时用）。 */
+    fun reload(context: Context, host: String): SettingsModel.HostState {
+        val loaded = readOrMigrate(context.applicationContext ?: context, host)
+        apply(loaded)
+        return loaded
+    }
+
+    // ================= 内部实现 =================
+
+    private fun apply(next: SettingsModel.HostState) {
+        _state.value = next
+        HapticEngine.cachedSettings = next.settings
+        HapticEngine.cachedCustomHaptic = next.waveform
+        HookRuntime.onConfigApplied(next.updatedAt)
+    }
+
+    /** 读快照；不存在则迁移；内容非法则留证后退回默认值。 */
+    private fun readOrMigrate(context: Context, host: String): SettingsModel.HostState {
+        val file = HostPaths.state(context)
+        if (file.isFile) {
+            parse(file)?.let { return it }
+            quarantine(file)
+            return SettingsModel.HostState(updatedAt = System.currentTimeMillis())
         }
 
-        val haptic = runCatching {
-            val file = HostPaths.haptic(context)
-            if (file.isFile) SettingsModel.parseCustomHaptic(file.readText()) else null
-        }.getOrNull()
+        val migrated = buildMigratedState(context)
+        writeState(context, migrated)
+        moveLegacyFiles(context)
+        Log.i(TAG, "migrated to $STATE_NAME for $host")
+        return migrated
+    }
 
-        val ui = runCatching {
-            val file = HostPaths.ui(context)
-            if (file.isFile) parseUi(file.readText()) else UiState()
-        }.getOrDefault(UiState())
+    private fun parse(file: File): SettingsModel.HostState? = runCatching {
+        SettingsModel.json.decodeFromString(SettingsModel.HostState.serializer(), file.readText())
+    }.onFailure { Log.w(TAG, "$STATE_NAME parse failed, keep last valid", it) }.getOrNull()
 
-        return Snapshot(
-            settings = settings,
-            haptic = haptic,
-            ui = ui,
-            revision = settingsFile.takeIf { it.isFile }?.lastModified() ?: 0L,
+    /** 非法内容改名为 `state.bad.<ts>.json`，保留现场。 */
+    private fun quarantine(file: File) {
+        runCatching {
+            val bad = File(file.parentFile, "state.bad.${System.currentTimeMillis()}.json")
+            file.renameTo(bad)
+            Log.w(TAG, "$STATE_NAME is invalid, moved to ${bad.name}")
+        }.onFailure { Log.w(TAG, "quarantine failed", it) }
+    }
+
+    /** 旧三件套 → 旧 config.xml → 默认值。 */
+    private fun buildMigratedState(context: Context): SettingsModel.HostState {
+        val settingsFile = HostPaths.legacySettings(context)
+        val hapticFile = HostPaths.legacyHaptic(context)
+        val uiFile = HostPaths.legacyUi(context)
+        val xmlFile = HostPaths.legacyXml(context)
+
+        val legacySettings = settingsFile.takeIf { it.isFile }
+            ?.let { runCatching { SettingsModel.parseLegacySettings(it.readText()) }.getOrNull() }
+        val legacyHaptic = hapticFile.takeIf { it.isFile }
+            ?.let { runCatching { SettingsModel.parseLegacyHaptic(it.readText()) }.getOrNull() }
+        val legacyUi = uiFile.takeIf { it.isFile }
+            ?.let { runCatching { SettingsModel.parseLegacyUi(it.readText()) }.getOrNull() }
+        val fromXml = xmlFile.takeIf { it.isFile }
+            ?.let { runCatching { LegacyConfigImporter.parseLegacyXml(it.readText()) }.getOrNull() }
+
+        return SettingsModel.HostState(
+            updatedAt = System.currentTimeMillis(),
+            settings = legacySettings ?: fromXml ?: SettingsModel.defaultSettings(),
+            waveform = legacyHaptic,
+            ui = legacyUi ?: SettingsModel.UiState(),
         )
     }
 
-    /** 保存设置；先写 haptic 位置的调用由调用方保证顺序（见 [save]）。 */
-    fun saveSettings(context: Context, host: String, settings: SettingsModel.SettingsState): Boolean {
-        val ok = writeSettings(context, settings)
-        if (ok) {
-            // 同进程内立即回填，避免 UI 在 200ms 去抖窗口内读到旧值；Hook 侧仍走文件监听。
-            val merged = current.copy(settings = settings, revision = System.currentTimeMillis())
-            current = merged
-            publish(merged)
+    /** 迁移后把旧文件移入 `config/legacy/`，不删除，便于回滚。 */
+    private fun moveLegacyFiles(context: Context) {
+        val legacyDir = HostPaths.legacyDir(context)
+        listOf(
+            HostPaths.legacySettings(context),
+            HostPaths.legacyHaptic(context),
+            HostPaths.legacyUi(context),
+            HostPaths.legacyXml(context),
+        ).forEach { file ->
+            if (!file.isFile) return@forEach
+            runCatching {
+                val target = File(legacyDir, file.name)
+                if (target.exists()) target.delete()
+                file.renameTo(target)
+            }.onFailure { Log.w(TAG, "move legacy failed: ${file.name}", it) }
         }
-        return ok
     }
 
-    fun saveHaptic(context: Context, host: String, haptic: SettingsModel.CustomHapticConfig): Boolean {
-        val ok = atomicWrite(HostPaths.haptic(context), SettingsModel.serializeCustomHaptic(haptic))
-        if (ok) {
-            val merged = current.copy(haptic = haptic)
-            current = merged
-            publish(merged)
+    private fun writeState(context: Context, state: SettingsModel.HostState): Boolean = runCatching {
+        val atomic = AtomicFile(HostPaths.state(context))
+        val bytes = SettingsModel.json
+            .encodeToString(SettingsModel.HostState.serializer(), state)
+            .toByteArray(Charsets.UTF_8)
+        var out: FileOutputStream? = null
+        try {
+            out = atomic.startWrite()
+            out.write(bytes)
+            out.fd.sync()
+            atomic.finishWrite(out)
+        } catch (e: Exception) {
+            out?.let { atomic.failWrite(it) }
+            throw e
         }
-        return ok
-    }
-
-    fun saveUi(context: Context, host: String, ui: UiState): Boolean {
-        val ok = atomicWrite(HostPaths.ui(context), serializeUi(ui))
-        if (ok) {
-            val merged = current.copy(ui = ui)
-            current = merged
-        }
-        return ok
-    }
-
-    private fun migrate(context: Context): SettingsModel.SettingsState {
-        val legacy = HostPaths.legacyConfig(context)
-        if (legacy.isFile) {
-            runCatching { legacy.readText() }.getOrNull()
-                ?.let { LegacyConfigImporter.parseLegacyXml(it) }
-                ?.let {
-                    logInfo("migrated legacy config.xml")
-                    return it
-                }
-        }
-        return SettingsModel.defaultSettings()
-    }
-
-    private fun publish(snapshot: Snapshot) {
-        HapticEngine.cachedSettings = snapshot.settings
-        HapticEngine.cachedCustomHaptic = snapshot.haptic
-        HookRuntime.onConfigApplied(snapshot.revision)
-    }
+        true
+    }.onFailure { Log.w(TAG, "write $STATE_NAME failed", it) }.getOrDefault(false)
 
     private fun startWatching(context: Context, host: String) {
-        val file = HostPaths.configDir(context)
-        val listener = ConfigFileObserver(file, onChanged = {
-            debounceHandler.postDelayed(DEBOUNCE_MS) {
-                val ctx = appContext ?: return@postDelayed
-                val snapshot = load(ctx, host)
-                current = snapshot
-                publish(snapshot)
-                logInfo("config reloaded revision=${snapshot.revision}")
+        val listener = object : FileObserver(HostPaths.configDir(context).absolutePath, CLOSE_WRITE or MOVED_TO) {
+            override fun onEvent(event: Int, path: String?) {
+                if (path != STATE_NAME) return
+                debouncer.postDelayed(DEBOUNCE_MS) { reloadFromWatch(host) }
             }
-        })
+        }
         observer = listener
         runCatching { listener.startWatching() }
-            .onFailure { android.util.Log.w(TAG, "FileObserver start failed", it) }
+            .onFailure { Log.w(TAG, "FileObserver start failed", it) }
     }
 
     private fun stopWatching() {
-        (observer as? ConfigFileObserver)?.let { runCatching { it.stopWatching() } }
+        observer?.let { runCatching { it.stopWatching() } }
         observer = null
-        debounceHandler.cancel()
+        debouncer.cancel()
     }
 
-    private fun readSettings(file: java.io.File): SettingsModel.SettingsState? = runCatching {
-        val json = org.json.JSONObject(file.readText())
-        SettingsModel.SettingsState(
-            downIndex = json.optInt("down_mode", 1),
-            upIndex = json.optInt("up_mode", 1),
-            downDuration = json.optDouble("down_duration", 50.0).toFloat(),
-            downStrength = json.optDouble("down_strength", 0.5).toFloat(),
-            upDuration = json.optDouble("up_duration", 50.0).toFloat(),
-            upStrength = json.optDouble("up_strength", 0.5).toFloat(),
-            downSystemIndex = json.optInt("down_system", 0),
-            upSystemIndex = json.optInt("up_system", 3),
-            themeMode = json.optInt("theme_mode", 2),
-            debugLog = json.optBoolean("debug_log", false),
-        )
-    }.onFailure { android.util.Log.w(TAG, "settings.json parse failed, keep last valid", it) }.getOrNull()
-
-    private fun writeSettings(context: Context, settings: SettingsModel.SettingsState): Boolean {
-        val now = System.currentTimeMillis()
-        val json = org.json.JSONObject().apply {
-            put("schema", SCHEMA)
-            put("revision", now)
-            put("updated_at", now)
-            put("down_mode", settings.downIndex)
-            put("up_mode", settings.upIndex)
-            put("down_system", settings.downSystemIndex)
-            put("up_system", settings.upSystemIndex)
-            put("down_duration", settings.downDuration.toDouble())
-            put("down_strength", settings.downStrength.toDouble())
-            put("up_duration", settings.upDuration.toDouble())
-            put("up_strength", settings.upStrength.toDouble())
-            put("theme_mode", settings.themeMode)
-            put("debug_log", settings.debugLog)
-        }
-        return atomicWrite(HostPaths.settings(context), json.toString())
-    }
-
-    /**
-     * 原子写：临时文件 → `fd.sync()` → 删除旧文件并重命名；重命名失败时退化为流拷贝。
-     */
-    private fun atomicWrite(target: java.io.File, text: String): Boolean = runCatching {
-        target.parentFile?.mkdirs()
-        val tmp = java.io.File(target.parentFile, target.name + ".tmp")
-        java.io.FileOutputStream(tmp, false).use { out ->
-            out.write(text.toByteArray(Charsets.UTF_8))
-            out.flush()
-            out.fd.sync()
-        }
-        if (target.exists() && !target.delete()) {
-            tmp.copyTo(target, overwrite = true)
-            tmp.delete()
-            return@runCatching true
-        }
-        if (!tmp.renameTo(target)) {
-            tmp.copyTo(target, overwrite = true)
-            tmp.delete()
-        }
-        true
-    }.onFailure { android.util.Log.w(TAG, "write failed: ${target.name}", it) }.getOrDefault(false)
-
-    private fun parseUi(text: String): UiState = runCatching {
-        val json = org.json.JSONObject(text)
-        UiState(
-            fabX = json.optDouble("fab_x", 0.0).toFloat(),
-            fabY = json.optDouble("fab_y", UiState.DEFAULT_FAB_Y.toDouble()).toFloat(),
-            colorMode = json.optInt("color_mode", 2),
-        )
-    }.getOrDefault(UiState())
-
-    private fun serializeUi(ui: UiState): String = org.json.JSONObject().apply {
-        put("fab_x", ui.fabX.toDouble())
-        put("fab_y", ui.fabY.toDouble())
-        put("color_mode", ui.colorMode)
-    }.toString()
-
-    private fun logInfo(message: String) = android.util.Log.i(TAG, message)
-
-    /** 监听 config 目录的写入与重命名事件（临时文件 → 正式文件的落地方式）。 */
-    private class ConfigFileObserver(
-        dir: java.io.File,
-        private val onChanged: () -> Unit,
-    ) : android.os.FileObserver(dir.absolutePath, CLOSE_WRITE or MOVED_TO) {
-
-        override fun onEvent(event: Int, path: String?) {
-            if (path == null) return
-            if (path.endsWith(".tmp")) return
-            onChanged()
-        }
+    /** 监听线程触发的重读：`updated_at` 没变说明是自己写的回环，直接跳过。 */
+    private fun reloadFromWatch(host: String) {
+        val context = appContext ?: return
+        val file = HostPaths.state(context)
+        if (!file.isFile) return
+        val next = parse(file) ?: return
+        if (next.updatedAt == _state.value.updatedAt) return
+        apply(next)
+        Log.i(TAG, "config reloaded for $host at ${next.updatedAt}")
     }
 
     /** 极简去抖器：单线程 Handler，避免引入协程作用域依赖。 */
@@ -275,7 +246,10 @@ object SettingsStore {
 
         fun postDelayed(delayMs: Long, block: () -> Unit) {
             pending?.let { handler.removeCallbacks(it) }
-            val runnable = Runnable { pending = null; block() }
+            val runnable = Runnable {
+                pending = null
+                block()
+            }
             pending = runnable
             handler.postDelayed(runnable, delayMs)
         }

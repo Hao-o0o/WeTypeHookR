@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string-array name="vibration_modes">
+        <item>Off</item>
+        <item>System preset</item>
+        <item>Simple custom</item>
+        <item>Custom waveform</item>
+    </string-array>
+
+    <string-array name="system_haptics">
+        <item>Virtual Key</item>
+        <item>Virtual Key Release</item>
+        <item>Keyboard Tap</item>
+        <item>Keyboard Press</item>
+        <item>Keyboard Release</item>
+        <item>Long Press</item>
+        <item>Context Click</item>
+        <item>Confirm</item>
+        <item>Reject</item>
+        <item>Clock Tick</item>
+        <item>Gesture Start</item>
+        <item>Gesture End</item>
+        <item>Gesture Threshold Activate</item>
+        <item>Gesture Threshold Deactivate</item>
+        <item>Drag Start</item>
+        <item>Text Handle Move</item>
+        <item>Segment Tick</item>
+        <item>Segment Frequent Tick</item>
+        <item>Toggle On</item>
+        <item>Toggle Off</item>
+    </string-array>
+
+    <string-array name="color_modes">
+        <item>Light</item>
+        <item>Dark</item>
+        <item>Follow system</item>
+    </string-array>
+</resources>
