@@ -1,7 +1,7 @@
 # WeTypeHookR（WeDouVibrator）开发文档
 
 > **文档定位**：目标架构与规范参考（v1.4）。实施步骤、阶段闸门、文件清单见 `TASK_HOST_SETTINGS_MIGRATION.md`。
-> **状态说明**：仓库当前代码为 `1.3.0`，本文描述改造完成后的形态；两者不一致处，一律以任务书为准执行。
+> **状态说明**：底座切换（P0/P1）已完成并提交到 `dev`：入口为 `HookEntry`（YukiHook + KSP 生成 `META-INF/xposed`），配置存宿主 `files/haostoo/config/*.json`，设置页为宿主进程内的 `SettingsActivity`（`ModuleActivity`），桌面入口与 Remote 通道已移除。仍需完成：P3 模块设置/调试页、P4 文案资源化、P5 文档回写与真机回归。
 > **技术底座**：LibXposed API 102 + YukiHook 1.5.0 + Miuix 0.9.3 + Compose。
 > 历史交接类文档（`HANDOFF.md`、`API102_MIGRATION_GUIDE.md`、`HOST_INJECTED_SETTINGS_ACTIVITY_GUIDE.md`）仅作背景，不再作为设计依据。
 
