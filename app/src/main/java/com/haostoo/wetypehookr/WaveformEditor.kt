@@ -5,8 +5,10 @@ import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
@@ -182,7 +184,7 @@ fun WaveformEditorContent(
             .padding(horizontal = 12.dp, vertical = 12.dp),
     ) {
         warning?.let {
-            Card(modifier = Modifier.fillMaxWidth()) {
+            Card(modifier = Modifier.fillMaxWidth(), insideMargin = PaddingValues(0.dp)) {
                 Text(
                     text = it,
                     fontSize = 13.sp,
@@ -260,11 +262,11 @@ private fun WaveformCard(
     val description = stringResource(
         if (isDown) R.string.waveform_down_desc else R.string.waveform_up_desc,
     )
-    Card(modifier = Modifier.fillMaxWidth()) {
+    Card(modifier = Modifier.fillMaxWidth(), insideMargin = PaddingValues(0.dp)) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(text = title, fontSize = 15.sp, color = MiuixTheme.colorScheme.onSurface)
             Text(text = description, fontSize = 12.sp, color = MiuixTheme.colorScheme.onSurfaceContainerVariant)
-            Spacer(Modifier.width(8.dp))
+            Spacer(Modifier.height(8.dp))
 
             ControlledNumberField(
                 value = draft.count,
@@ -276,7 +278,7 @@ private fun WaveformCard(
                     .padding(top = 8.dp),
             )
 
-            Spacer(Modifier.width(8.dp))
+            Spacer(Modifier.height(8.dp))
             WaveformCurve(
                 a11y = stringResource(R.string.waveform_curve_a11y),
                 timings = draft.timings,

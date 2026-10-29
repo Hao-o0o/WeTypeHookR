@@ -22,45 +22,52 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringArrayResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import androidx.compose.runtime.rememberCoroutineScope
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.Icon
-import top.yukonga.miuix.kmp.basic.ScrollBehavior
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.icon.MiuixIcons
-import top.yukonga.miuix.kmp.icon.extended.Info
+import top.yukonga.miuix.kmp.icon.extended.Help
 import top.yukonga.miuix.kmp.icon.extended.Import
+import top.yukonga.miuix.kmp.icon.extended.Info
 import top.yukonga.miuix.kmp.icon.extended.Notes
 import top.yukonga.miuix.kmp.icon.extended.UploadCloud
-import top.yukonga.miuix.kmp.icon.extended.Help
 import top.yukonga.miuix.kmp.preference.ArrowPreference
 import top.yukonga.miuix.kmp.preference.OverlayDropdownPreference
 import top.yukonga.miuix.kmp.preference.SwitchPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import java.io.File
 
-/** 模块设置：颜色模式、配置导入导出、进入调试 / 帮助 / 关于。 */
+/** 与设置页一致的页面水平内边距与卡片间距。 */
+private val PagePadding = 12.dp
+private val CardGap = 12.dp
+
+/** 卡片内自定义内容使用的水平内边距。 */
+private val ContentPadding = 16.dp
+
+/**
+ * 模块设置：颜色模式、配置导入导出、导入旧配置、调试 / 帮助 / 关于入口。
+ */
 @Composable
 fun ModuleSettingsPage(
     state: SettingsModel.HostState?,
     readOnly: Boolean,
-    scrollBehavior: ScrollBehavior,
+    topInset: Dp,
     onOpenDebug: () -> Unit,
     onOpenHelp: () -> Unit,
     onOpenAbout: () -> Unit,
-    modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -104,12 +111,14 @@ fun ModuleSettingsPage(
     val colorMode = state?.ui?.colorMode ?: 2
 
     Column(
-        modifier = modifier
-            .nestedScroll(scrollBehavior.nestedScrollConnection)
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(top = topInset)
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = 12.dp),
+            .padding(horizontal = PagePadding),
     ) {
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(CardGap))
+
         Card(modifier = Modifier.fillMaxWidth(), insideMargin = PaddingValues(0.dp)) {
             OverlayDropdownPreference(
                 title = stringResource(R.string.title_color_mode),
@@ -117,7 +126,7 @@ fun ModuleSettingsPage(
                 selectedIndex = colorMode.coerceIn(0, colorModes.lastIndex),
                 enabled = !readOnly,
                 onSelectedIndexChange = { mode ->
-                    SettingsStore.update(context, context.packageName) {
+                    SettingsStore.updateAsync(context, context.packageName) {
                         it.copy(ui = it.ui.copy(colorMode = mode))
                     }
                 },
@@ -164,14 +173,15 @@ fun ModuleSettingsPage(
                     if (parsed == null) {
                         Toast.makeText(context, readFailed, Toast.LENGTH_SHORT).show()
                     } else {
-                        SettingsStore.update(context, context.packageName) { it.copy(settings = parsed) }
+                        SettingsStore.updateAsync(context, context.packageName) { it.copy(settings = parsed) }
                         Toast.makeText(context, importedText, Toast.LENGTH_SHORT).show()
                     }
                 },
             )
         }
 
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(CardGap))
+
         Card(modifier = Modifier.fillMaxWidth(), insideMargin = PaddingValues(0.dp)) {
             ArrowPreference(
                 title = stringResource(R.string.title_debug_logs),
@@ -211,7 +221,8 @@ fun ModuleSettingsPage(
                 onClick = onOpenAbout,
             )
         }
-        Spacer(Modifier.height(12.dp))
+
+        Spacer(Modifier.height(CardGap))
         Spacer(Modifier.navigationBarsPadding())
     }
 }
@@ -221,9 +232,8 @@ fun ModuleSettingsPage(
 fun DebugPage(
     state: SettingsModel.HostState?,
     readOnly: Boolean,
-    scrollBehavior: ScrollBehavior,
+    topInset: Dp,
     onSettingsChange: (SettingsModel.SettingsState) -> Unit,
-    modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -237,42 +247,36 @@ fun DebugPage(
     ) { uri: Uri? ->
         if (uri == null) return@rememberLauncherForActivityResult
         scope.launch {
-            withContext(Dispatchers.IO) {
+            val message = withContext(Dispatchers.IO) {
                 val zip = File(context.cacheDir, "wedouvibrator-logs.zip")
                 if (!LogStore.exportToZip(context, zip)) {
-                    withContext(Dispatchers.Main) {
-                        Toast.makeText(context, emptyText, Toast.LENGTH_SHORT).show()
+                    emptyText
+                } else {
+                    val result = runCatching {
+                        context.contentResolver.openOutputStream(uri)?.use { out ->
+                            zip.inputStream().use { it.copyTo(out) }
+                        }
                     }
-                    return@withContext
-                }
-                val result = runCatching {
-                    context.contentResolver.openOutputStream(uri)?.use { out ->
-                        zip.inputStream().use { it.copyTo(out) }
+                    zip.delete()
+                    if (result.isSuccess) {
+                        exportedText
+                    } else {
+                        failedTpl.format(result.exceptionOrNull()?.message ?: "")
                     }
-                }
-                zip.delete()
-                withContext(Dispatchers.Main) {
-                    Toast.makeText(
-                        context,
-                        if (result.isSuccess) {
-                            exportedText
-                        } else {
-                            failedTpl.format(result.exceptionOrNull()?.message ?: "")
-                        },
-                        Toast.LENGTH_SHORT,
-                    ).show()
                 }
             }
+            Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
         }
     }
 
     Column(
-        modifier = modifier
-            .nestedScroll(scrollBehavior.nestedScrollConnection)
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(top = topInset)
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = 12.dp),
+            .padding(horizontal = PagePadding),
     ) {
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(CardGap))
         Card(modifier = Modifier.fillMaxWidth(), insideMargin = PaddingValues(0.dp)) {
             SwitchPreference(
                 title = stringResource(R.string.title_debug_logs),
@@ -289,8 +293,10 @@ fun DebugPage(
                 summary = stringResource(R.string.summary_clear_logs),
                 enabled = !readOnly,
                 onClick = {
-                    LogStore.clear(context)
-                    Toast.makeText(context, clearedText, Toast.LENGTH_SHORT).show()
+                    scope.launch {
+                        withContext(Dispatchers.IO) { LogStore.clear(context) }
+                        Toast.makeText(context, clearedText, Toast.LENGTH_SHORT).show()
+                    }
                 },
             )
             ArrowPreference(
@@ -299,23 +305,25 @@ fun DebugPage(
                 onClick = { exportLauncher.launch("wedouvibrator-logs.zip") },
             )
         }
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(CardGap))
         Spacer(Modifier.navigationBarsPadding())
     }
 }
 
 /** 帮助：使用说明与波形格式（内置文案，不依赖网络）。 */
 @Composable
-fun HelpPage(modifier: Modifier = Modifier) {
+fun HelpPage(topInset: Dp) {
     val lines = stringArrayResource(R.array.help_lines).toList()
     Column(
-        modifier = modifier
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(top = topInset)
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = 12.dp),
+            .padding(horizontal = PagePadding),
     ) {
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(CardGap))
         Card(modifier = Modifier.fillMaxWidth(), insideMargin = PaddingValues(0.dp)) {
-            Column(modifier = Modifier.padding(16.dp)) {
+            Column(modifier = Modifier.padding(ContentPadding)) {
                 Text(
                     text = stringResource(R.string.title_help),
                     fontSize = 16.sp,
@@ -331,14 +339,14 @@ fun HelpPage(modifier: Modifier = Modifier) {
                 }
             }
         }
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(CardGap))
         Spacer(Modifier.navigationBarsPadding())
     }
 }
 
 /** 关于：仓库 / 酷安 / 频道 / 赞助二维码。链接缺失时显示占位文案。 */
 @Composable
-fun AboutPage(modifier: Modifier = Modifier) {
+fun AboutPage(topInset: Dp) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val savedText = stringResource(R.string.toast_saved_to_gallery)
@@ -357,11 +365,14 @@ fun AboutPage(modifier: Modifier = Modifier) {
     }
 
     Column(
-        modifier = modifier
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(top = topInset)
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = 12.dp),
+            .padding(horizontal = PagePadding),
     ) {
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(CardGap))
+
         Card(modifier = Modifier.fillMaxWidth(), insideMargin = PaddingValues(0.dp)) {
             ArrowPreference(
                 title = stringResource(R.string.title_repo),
@@ -379,9 +390,11 @@ fun AboutPage(modifier: Modifier = Modifier) {
                 onClick = { openLink(AboutLinks.CHANNEL) },
             )
         }
-        Spacer(Modifier.height(12.dp))
+
+        Spacer(Modifier.height(CardGap))
+
         Card(modifier = Modifier.fillMaxWidth(), insideMargin = PaddingValues(0.dp)) {
-            Column(modifier = Modifier.padding(16.dp)) {
+            Column(modifier = Modifier.padding(ContentPadding)) {
                 Text(
                     text = stringResource(R.string.title_sponsor),
                     fontSize = 16.sp,
@@ -411,7 +424,8 @@ fun AboutPage(modifier: Modifier = Modifier) {
                 },
             )
         }
-        Spacer(Modifier.height(12.dp))
+
+        Spacer(Modifier.height(CardGap))
         Spacer(Modifier.navigationBarsPadding())
     }
 }
