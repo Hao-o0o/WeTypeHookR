@@ -11,6 +11,7 @@ import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
@@ -18,10 +19,16 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
@@ -40,7 +47,9 @@ import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Help
 import top.yukonga.miuix.kmp.icon.extended.Import
 import top.yukonga.miuix.kmp.icon.extended.Notes
+import top.yukonga.miuix.kmp.icon.extended.Theme
 import top.yukonga.miuix.kmp.icon.extended.UploadCloud
+import top.yukonga.miuix.kmp.overlay.OverlayDialog
 import top.yukonga.miuix.kmp.preference.ArrowPreference
 import top.yukonga.miuix.kmp.preference.OverlayDropdownPreference
 import top.yukonga.miuix.kmp.preference.SwitchPreference
@@ -54,7 +63,7 @@ private val ContentPadding = 16.dp
 private val CardGap = 12.dp
 
 /**
- * 设置板块：模块设置（颜色模式、配置导入导出）+ 调试 / 帮助入口 + 关于。
+ * 设置板块：颜色模式 → 配置与日志 → 关于。
  */
 @Composable
 fun SettingsContent(
@@ -71,6 +80,8 @@ fun SettingsContent(
     val importedText = stringResource(R.string.toast_config_imported)
     val readFailed = stringResource(R.string.toast_read_file_failed)
     val badFormat = stringResource(R.string.error_import_format)
+
+    var showSponsor by remember { mutableStateOf(false) }
 
     val exportLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/json"),
@@ -120,11 +131,39 @@ fun SettingsContent(
                 items = colorModes,
                 selectedIndex = colorMode.coerceIn(0, colorModes.lastIndex),
                 enabled = !readOnly,
+                startAction = {
+                    Icon(
+                        MiuixIcons.Theme,
+                        null,
+                        modifier = Modifier.padding(end = 12.dp),
+                        tint = MiuixTheme.colorScheme.primary,
+                    )
+                },
                 onSelectedIndexChange = { mode ->
                     SettingsStore.updateAsync(context, context.packageName) {
                         it.copy(ui = it.ui.copy(colorMode = mode))
                     }
                 },
+            )
+        }
+
+        Spacer(Modifier.height(CardGap))
+
+        // 配置导入导出 + 调试 + 帮助：同属「维护」类，放一张卡。
+        Card(modifier = Modifier.fillMaxWidth(), insideMargin = PaddingValues(CardInset)) {
+            ArrowPreference(
+                title = stringResource(R.string.action_import_config),
+                summary = stringResource(R.string.summary_import_config),
+                enabled = !readOnly,
+                startAction = {
+                    Icon(
+                        MiuixIcons.Import,
+                        null,
+                        modifier = Modifier.padding(end = 12.dp),
+                        tint = MiuixTheme.colorScheme.primary,
+                    )
+                },
+                onClick = { importLauncher.launch(arrayOf("application/json", "text/plain")) },
             )
             ArrowPreference(
                 title = stringResource(R.string.action_export_config),
@@ -140,25 +179,6 @@ fun SettingsContent(
                 },
                 onClick = { exportLauncher.launch("wedouvibrator-config.json") },
             )
-            ArrowPreference(
-                title = stringResource(R.string.action_import_config),
-                summary = stringResource(R.string.summary_import_config),
-                enabled = !readOnly,
-                startAction = {
-                    Icon(
-                        MiuixIcons.Import,
-                        null,
-                        modifier = Modifier.padding(end = 12.dp),
-                        tint = MiuixTheme.colorScheme.primary,
-                    )
-                },
-                onClick = { importLauncher.launch(arrayOf("application/json", "text/plain")) },
-            )
-        }
-
-        Spacer(Modifier.height(CardGap))
-
-        Card(modifier = Modifier.fillMaxWidth(), insideMargin = PaddingValues(CardInset)) {
             ArrowPreference(
                 title = stringResource(R.string.title_debug_logs),
                 summary = stringResource(R.string.summary_debug_logs),
@@ -188,69 +208,70 @@ fun SettingsContent(
         }
 
         Spacer(Modifier.height(CardGap))
-        AboutCard()
-        Spacer(Modifier.height(CardGap))
 
+        // 关于：四个入口同卡，赞助点开弹层。
+        Card(modifier = Modifier.fillMaxWidth(), insideMargin = PaddingValues(CardInset)) {
+            ArrowPreference(
+                title = stringResource(R.string.title_repo),
+                summary = AboutLinks.REPO,
+                onClick = { openLink(context, AboutLinks.REPO) },
+            )
+            ArrowPreference(
+                title = stringResource(R.string.title_coolapk),
+                summary = AboutLinks.COOLAPK
+                    ?: stringResource(R.string.link_unavailable),
+                onClick = { openLink(context, AboutLinks.COOLAPK) },
+            )
+            ArrowPreference(
+                title = stringResource(R.string.title_channel),
+                summary = AboutLinks.CHANNEL
+                    ?: stringResource(R.string.link_unavailable),
+                onClick = { openLink(context, AboutLinks.CHANNEL) },
+            )
+            ArrowPreference(
+                title = stringResource(R.string.title_sponsor),
+                onClick = { showSponsor = true },
+            )
+        }
+
+        Spacer(Modifier.height(CardGap))
         Spacer(Modifier.height(insets.calculateBottomPadding()))
+    }
+
+    if (showSponsor) {
+        SponsorDialog(onDismiss = { showSponsor = false })
     }
 }
 
-/** 关于作者：外链与赞助二维码。 */
+/** 赞助弹层：二维码 + 一句致谢。 */
 @Composable
-private fun AboutCard() {
+private fun SponsorDialog(onDismiss: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val savedText = stringResource(R.string.toast_saved_to_gallery)
     val saveFailed = stringResource(R.string.toast_save_failed)
-    val linkUnavailable = stringResource(R.string.link_unavailable)
-    val openFailed = stringResource(R.string.toast_open_link_failed)
 
-    fun openLink(url: String?) {
-        if (url.isNullOrBlank()) {
-            Toast.makeText(context, linkUnavailable, Toast.LENGTH_SHORT).show()
-            return
-        }
-        runCatching {
-            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
-        }.onFailure { Toast.makeText(context, openFailed, Toast.LENGTH_SHORT).show() }
-    }
-
-    Card(modifier = Modifier.fillMaxWidth(), insideMargin = PaddingValues(CardInset)) {
-        Column(modifier = Modifier.padding(ContentPadding)) {
-            Text(
-                text = stringResource(R.string.title_about_author),
-                fontSize = 16.sp,
-                fontWeight = FontWeight.SemiBold,
-            )
-            Text(
-                text = stringResource(R.string.summary_sponsor),
-                fontSize = 12.sp,
-                color = MiuixTheme.colorScheme.onSurfaceContainerVariant,
-                modifier = Modifier.padding(top = 4.dp),
-            )
+    OverlayDialog(
+        title = stringResource(R.string.title_sponsor),
+        show = true,
+        onDismissRequest = onDismiss,
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
             Image(
                 painter = painterResource(R.drawable.sponsor),
                 contentDescription = stringResource(R.string.sponsor_qr_a11y),
-                modifier = Modifier
-                    .padding(top = 12.dp)
-                    .fillMaxWidth(),
+                modifier = Modifier.size(200.dp),
+            )
+            Text(
+                text = stringResource(R.string.sponsor_dialog_message),
+                fontSize = 14.sp,
+                color = MiuixTheme.colorScheme.onSurfaceContainerVariant,
+                modifier = Modifier.padding(top = 12.dp),
             )
         }
-        ArrowPreference(
-            title = stringResource(R.string.title_repo),
-            summary = AboutLinks.REPO,
-            onClick = { openLink(AboutLinks.REPO) },
-        )
-        ArrowPreference(
-            title = stringResource(R.string.title_coolapk),
-            summary = AboutLinks.COOLAPK ?: linkUnavailable,
-            onClick = { openLink(AboutLinks.COOLAPK) },
-        )
-        ArrowPreference(
-            title = stringResource(R.string.title_channel),
-            summary = AboutLinks.CHANNEL ?: linkUnavailable,
-            onClick = { openLink(AboutLinks.CHANNEL) },
-        )
         ArrowPreference(
             title = stringResource(R.string.action_save_image),
             onClick = {
@@ -260,6 +281,18 @@ private fun AboutCard() {
                 }
             },
         )
+    }
+}
+
+private fun openLink(context: Context, url: String?) {
+    if (url.isNullOrBlank()) {
+        Toast.makeText(context, context.getString(R.string.link_unavailable), Toast.LENGTH_SHORT).show()
+        return
+    }
+    runCatching {
+        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+    }.onFailure {
+        Toast.makeText(context, context.getString(R.string.toast_open_link_failed), Toast.LENGTH_SHORT).show()
     }
 }
 

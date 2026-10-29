@@ -91,7 +91,7 @@
 
     <string name="title_module_settings">Module settings</string>
     <string name="title_color_mode">Color mode</string>
-    <string name="title_debug_logs">Debug &amp; logs</string>
+    <string name="title_debug_logs">Debug logs</string>
     <string name="summary_debug_logs">Write categorized logs to the host config dir</string>
     <string name="summary_clear_logs">Delete this host\'s logs</string>
     <string name="summary_export_logs">Zip this host\'s logs</string>
@@ -114,8 +114,9 @@
     <string name="title_repo">Repository</string>
     <string name="title_coolapk">Coolapk</string>
     <string name="title_channel">Channel</string>
-    <string name="title_sponsor">Sponsor</string>
+    <string name="title_sponsor">Sponsor the author</string>
     <string name="summary_sponsor">Scan to support the author, or save the image first</string>
+    <string name="sponsor_dialog_message">Thanks for feeding the author a big fish</string>
     <string name="sponsor_qr_a11y">Sponsor QR code</string>
     <string name="toast_saved_to_gallery">Saved to Pictures/WeDouVibrator</string>
     <string name="toast_save_failed">Save failed</string>
@@ -130,7 +131,6 @@
     <string name="tab_settings">Settings</string>
     <string name="title_module">Module</string>
     <string name="label_module_version">Module %1$s</string>
-    <string name="title_about_author">About the author</string>
 
     <string name="title_framework_status">Framework status</string>
     <string name="status_connected">Connected</string>

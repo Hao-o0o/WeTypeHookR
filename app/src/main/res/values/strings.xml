@@ -91,7 +91,7 @@
 
     <string name="title_module_settings">模块设置</string>
     <string name="title_color_mode">颜色模式</string>
-    <string name="title_debug_logs">调试与日志</string>
+    <string name="title_debug_logs">调试日志</string>
     <string name="summary_debug_logs">开启后按分类写入宿主配置目录（重启输入法后生效）</string>
     <string name="summary_clear_logs">删除当前宿主全部日志</string>
     <string name="summary_export_logs">打包当前宿主日志为 zip</string>
@@ -111,11 +111,12 @@
     <string name="help_load_failed">加载失败，请检查网络，或到仓库查看 README。</string>
 
     <string name="title_about">关于作者</string>
-    <string name="title_repo">仓库</string>
+    <string name="title_repo">仓库主页</string>
     <string name="title_coolapk">酷安主页</string>
-    <string name="title_channel">频道</string>
-    <string name="title_sponsor">赞助</string>
+    <string name="title_channel">频道连接</string>
+    <string name="title_sponsor">赞助作者</string>
     <string name="summary_sponsor">扫码支持作者，也可以先保存图片再识别</string>
+    <string name="sponsor_dialog_message">感谢你帮作者喂一口大肥鱼</string>
     <string name="sponsor_qr_a11y">赞助二维码</string>
     <string name="toast_saved_to_gallery">已保存到相册：Pictures/WeDouVibrator</string>
     <string name="toast_save_failed">保存失败</string>
@@ -130,7 +131,6 @@
     <string name="tab_settings">设置</string>
     <string name="title_module">模块</string>
     <string name="label_module_version">模块版本 %1$s</string>
-    <string name="title_about_author">关于作者</string>
 
     <string name="title_framework_status">框架连接状态</string>
     <string name="status_connected">已连接</string>
