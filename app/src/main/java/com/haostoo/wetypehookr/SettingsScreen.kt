@@ -2,6 +2,7 @@ package com.haostoo.wetypehookr
 
 import android.app.Activity
 import android.widget.Toast
+import androidx.annotation.StringRes
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
@@ -10,6 +11,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -21,8 +23,10 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -32,13 +36,17 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringArrayResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
@@ -48,9 +56,12 @@ import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.Slider
+import top.yukonga.miuix.kmp.basic.Surface
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextButton
 import top.yukonga.miuix.kmp.icon.MiuixIcons
+import top.yukonga.miuix.kmp.icon.extended.Home
+import top.yukonga.miuix.kmp.icon.extended.ListView
 import top.yukonga.miuix.kmp.icon.extended.Play
 import top.yukonga.miuix.kmp.icon.extended.Refresh
 import top.yukonga.miuix.kmp.icon.extended.Reset
@@ -63,11 +74,20 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.theme.darkColorScheme
 import top.yukonga.miuix.kmp.theme.lightColorScheme
 
-/** 页面内的一级 / 二级页；全部在同一个 Scaffold 内切换。 */
-private enum class Page { Main, Waveform, Module, Debug, Help, About }
+/** 根级三个板块：首页 / 配置 / 设置。 */
+private enum class RootTab(@StringRes val label: Int, val icon: ImageVector) {
+    Home(R.string.tab_home, MiuixIcons.Home),
+    Config(R.string.tab_config, MiuixIcons.ListView),
+    Settings(R.string.tab_settings, MiuixIcons.Settings),
+}
 
-/** 页面统一的水平内边距与卡片间距。 */
-private val PageHorizontal = 12.dp
+/** 二级页：占用整页并隐藏根级底栏。 */
+private enum class OverlayPage { Waveform, Debug, Help }
+
+// 统一间距体系：页面 16dp / 卡片内容 16dp（叠加卡片内缩 4dp = 20dp）/ 卡片间距 12dp
+private val PagePadding = 16.dp
+private val CardInset = 4.dp
+private val ContentPadding = 16.dp
 private val CardGap = 12.dp
 
 /**
@@ -141,7 +161,8 @@ private fun SettingsScaffold(
     hostPicker: @Composable () -> Unit,
 ) {
     val context = LocalContext.current
-    var page by remember { mutableStateOf(Page.Main) }
+    var tab by remember { mutableStateOf(RootTab.Home) }
+    var overlay by remember { mutableStateOf<OverlayPage?>(null) }
     var editingDown by remember { mutableStateOf<Boolean?>(null) }
     var activeDraft by remember { mutableStateOf<WaveDraft?>(null) }
     var draftWarning by remember { mutableStateOf(false) }
@@ -171,7 +192,8 @@ private fun SettingsScaffold(
         SettingsStore.updateAsync(context, host) { it.copy(waveform = merged) }
         editingDown = null
         activeDraft = null
-        page = Page.Main
+        overlay = null
+        tab = RootTab.Config
         toast(context.getString(R.string.waveform_saved, if (isDown) downLabel else upLabel))
     }
 
@@ -183,18 +205,16 @@ private fun SettingsScaffold(
         val source = if (editable) existing!! else if (isDown) fallback.down!! else fallback.up!!
         activeDraft = WaveDraft(source.timings.map { it.toInt() }, source.amplitudes)
         editingDown = isDown
-        page = Page.Waveform
+        overlay = OverlayPage.Waveform
     }
 
-    val titleOverride = when (page) {
-        Page.Main -> null
-        Page.Waveform -> stringResource(
+    val overlayTitle = when (overlay) {
+        OverlayPage.Waveform -> stringResource(
             if (editingDown == true) R.string.title_down_waveform else R.string.title_up_waveform,
         )
-        Page.Module -> stringResource(R.string.title_module_settings)
-        Page.Debug -> stringResource(R.string.title_debug_logs)
-        Page.Help -> stringResource(R.string.title_help)
-        Page.About -> stringResource(R.string.title_about)
+        OverlayPage.Debug -> stringResource(R.string.title_debug_logs)
+        OverlayPage.Help -> stringResource(R.string.title_help)
+        null -> null
     }
 
     Scaffold(
@@ -202,23 +222,28 @@ private fun SettingsScaffold(
             SettingsTopBar(
                 subtitle = stringResource(HostCatalog.labelRes(host)),
                 onBack = {
-                    if (page == Page.Main) {
+                    if (overlay == null) {
                         onBack()
                     } else {
-                        page = Page.Main
+                        overlay = null
                         editingDown = null
                         activeDraft = null
                     }
                 },
                 onSwitchHost = onSwitchHost,
-                titleOverride = titleOverride,
+                titleOverride = overlayTitle,
             )
         },
-    ) { padding ->
+        bottomBar = {
+            if (overlay == null) {
+                SettingsBottomBar(selected = tab, onSelect = { tab = it })
+            }
+        },
+    ) { insets ->
         AnimatedContent(
-            targetState = page,
+            targetState = overlay,
             transitionSpec = {
-                if (targetState != Page.Main) {
+                if (targetState != null) {
                     (slideInHorizontally(tween(260)) { it / 3 } + fadeIn(tween(180))) togetherWith
                         (slideOutHorizontally(tween(260)) { -it / 6 } + fadeOut(tween(180)))
                 } else {
@@ -228,22 +253,43 @@ private fun SettingsScaffold(
             },
             label = "settings-page",
         ) { current ->
-            val topInset = padding.calculateTopPadding()
-
             when (current) {
-                Page.Main -> MainContent(
-                    host = host,
-                    state = state,
-                    readOnly = readOnly,
-                    loaded = loaded,
-                    topInset = topInset,
-                    onSettingsChange = { saveSettings(it) },
-                    onOpenWaveformEditor = { isDown -> openWaveformEditor(isDown) },
-                    onReset = { showResetDialog = true },
-                    onOpenModuleSettings = { page = Page.Module },
-                )
+                null -> AnimatedContent(
+                    targetState = tab,
+                    transitionSpec = { fadeIn(tween(160)) togetherWith fadeOut(tween(120)) },
+                    label = "root-tab",
+                ) { active ->
+                    when (active) {
+                        RootTab.Home -> HomeContent(
+                            host = host,
+                            state = state,
+                            readOnly = readOnly,
+                            loaded = loaded,
+                            insets = insets,
+                        )
 
-                Page.Waveform -> {
+                        RootTab.Config -> ConfigContent(
+                            host = host,
+                            state = state,
+                            readOnly = readOnly,
+                            loaded = loaded,
+                            insets = insets,
+                            onSettingsChange = { saveSettings(it) },
+                            onOpenWaveformEditor = { isDown -> openWaveformEditor(isDown) },
+                            onReset = { showResetDialog = true },
+                        )
+
+                        RootTab.Settings -> SettingsContent(
+                            state = state,
+                            readOnly = readOnly,
+                            insets = insets,
+                            onOpenDebug = { overlay = OverlayPage.Debug },
+                            onOpenHelp = { overlay = OverlayPage.Help },
+                        )
+                    }
+                }
+
+                OverlayPage.Waveform -> {
                     if (editingDown != null && draft != null) {
                         val errorText = waveErrorText(draft.validate())
                         WaveformEditorContent(
@@ -251,7 +297,7 @@ private fun SettingsScaffold(
                             draft = draft,
                             warning = if (draftWarning) legacyWarn else null,
                             onCancel = {
-                                page = Page.Main
+                                overlay = null
                                 editingDown = null
                                 activeDraft = null
                             },
@@ -263,29 +309,19 @@ private fun SettingsScaffold(
                                     saveWaveform(editingDown == true, built)
                                 }
                             },
-                            modifier = Modifier.padding(top = topInset),
+                            modifier = Modifier.padding(top = insets.calculateTopPadding()),
                         )
                     }
                 }
 
-                Page.Module -> ModuleSettingsPage(
+                OverlayPage.Debug -> DebugPage(
                     state = state,
                     readOnly = readOnly,
-                    topInset = topInset,
-                    onOpenDebug = { page = Page.Debug },
-                    onOpenHelp = { page = Page.Help },
-                    onOpenAbout = { page = Page.About },
-                )
-
-                Page.Debug -> DebugPage(
-                    state = state,
-                    readOnly = readOnly,
-                    topInset = topInset,
+                    insets = insets,
                     onSettingsChange = { saveSettings(it) },
                 )
 
-                Page.Help -> HelpPage(topInset = topInset)
-                Page.About -> AboutPage(topInset = topInset)
+                OverlayPage.Help -> HelpPage(insets = insets)
             }
         }
 
@@ -326,17 +362,71 @@ private fun SettingsScaffold(
     }
 }
 
+/** 根级浮动底栏：三个板块，选中项主色高亮。 */
 @Composable
-private fun MainContent(
+private fun SettingsBottomBar(selected: RootTab, onSelect: (RootTab) -> Unit) {
+    Surface(color = MiuixTheme.colorScheme.surface) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .padding(start = 32.dp, end = 32.dp, top = 6.dp, bottom = 10.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Surface(
+                color = MiuixTheme.colorScheme.secondaryContainer,
+                shape = RoundedCornerShape(22.dp),
+                modifier = Modifier.weight(1f),
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 6.dp),
+                    horizontalArrangement = Arrangement.spacedBy(2.dp),
+                ) {
+                    RootTab.entries.forEach { item ->
+                        val active = item == selected
+                        val tint = if (active) {
+                            MiuixTheme.colorScheme.primary
+                        } else {
+                            MiuixTheme.colorScheme.onSurfaceContainerVariant
+                        }
+                        Column(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(16.dp))
+                                .clickable { onSelect(item) }
+                                .padding(vertical = 6.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                        ) {
+                            Icon(
+                                item.icon,
+                                stringResource(item.label),
+                                modifier = Modifier.size(22.dp),
+                                tint = tint,
+                            )
+                            Text(
+                                text = stringResource(item.label),
+                                fontSize = 11.sp,
+                                color = tint,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.padding(top = 2.dp),
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun HomeContent(
     host: String,
     state: SettingsModel.HostState?,
     readOnly: Boolean,
     loaded: Boolean,
-    topInset: androidx.compose.ui.unit.Dp,
-    onSettingsChange: (SettingsModel.SettingsState) -> Unit,
-    onOpenWaveformEditor: (Boolean) -> Unit,
-    onReset: () -> Unit,
-    onOpenModuleSettings: () -> Unit,
+    insets: PaddingValues,
 ) {
     val context = LocalContext.current
     var hostVersion by remember(host) { mutableStateOf<String?>(null) }
@@ -348,9 +438,53 @@ private fun MainContent(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(top = topInset)
+            .padding(top = insets.calculateTopPadding())
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = PageHorizontal),
+            .padding(horizontal = PagePadding),
+    ) {
+        Spacer(Modifier.height(CardGap))
+
+        if (!loaded) {
+            Text(
+                text = stringResource(R.string.state_loading),
+                color = MiuixTheme.colorScheme.onSurfaceContainerVariant,
+                fontSize = 14.sp,
+            )
+            return@Column
+        }
+
+        HostIdentityCard(host = host, hostVersion = hostVersion, readOnly = readOnly)
+        Spacer(Modifier.height(CardGap))
+
+        InjectionCard(hookStatus = if (readOnly) null else HookRuntime.status())
+        Spacer(Modifier.height(CardGap))
+
+        ModuleCard(state = state, readOnly = readOnly)
+
+        Spacer(Modifier.height(CardGap))
+        Spacer(Modifier.height(insets.calculateBottomPadding()))
+    }
+}
+
+@Composable
+private fun ConfigContent(
+    host: String,
+    state: SettingsModel.HostState?,
+    readOnly: Boolean,
+    loaded: Boolean,
+    insets: PaddingValues,
+    onSettingsChange: (SettingsModel.SettingsState) -> Unit,
+    onOpenWaveformEditor: (Boolean) -> Unit,
+    onReset: () -> Unit,
+) {
+    val context = LocalContext.current
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(top = insets.calculateTopPadding())
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = PagePadding),
     ) {
         Spacer(Modifier.height(CardGap))
 
@@ -365,24 +499,18 @@ private fun MainContent(
 
         if (state == null) {
             // 另一个宿主的数据目录不可读：只给提示，不给可编辑控件。
-            Card(modifier = Modifier.fillMaxWidth(), insideMargin = PaddingValues(0.dp)) {
+            Card(modifier = Modifier.fillMaxWidth(), insideMargin = PaddingValues(CardInset)) {
                 Text(
                     text = stringResource(R.string.host_no_access_hint),
                     fontSize = 13.sp,
                     color = MiuixTheme.colorScheme.onSurfaceContainerVariant,
-                    modifier = Modifier.padding(16.dp),
+                    modifier = Modifier.padding(ContentPadding),
                 )
             }
             Spacer(Modifier.height(CardGap))
-            Spacer(Modifier.navigationBarsPadding())
+            Spacer(Modifier.height(insets.calculateBottomPadding()))
             return@Column
         }
-
-        HostIdentityCard(host = host, hostVersion = hostVersion, readOnly = readOnly)
-        Spacer(Modifier.height(CardGap))
-
-        InjectionCard(hookStatus = if (readOnly) null else HookRuntime.status())
-        Spacer(Modifier.height(CardGap))
 
         VibrationCard(
             isDown = true,
@@ -419,18 +547,17 @@ private fun MainContent(
                     Toast.makeText(context, text, Toast.LENGTH_SHORT).show()
                 }
             },
-            onOpenModuleSettings = onOpenModuleSettings,
         )
 
         Spacer(Modifier.height(CardGap))
-        Spacer(Modifier.navigationBarsPadding())
+        Spacer(Modifier.height(insets.calculateBottomPadding()))
     }
 }
 
 @Composable
 private fun HostIdentityCard(host: String, hostVersion: String?, readOnly: Boolean) {
-    Card(modifier = Modifier.fillMaxWidth(), insideMargin = PaddingValues(0.dp)) {
-        Column(modifier = Modifier.padding(16.dp)) {
+    Card(modifier = Modifier.fillMaxWidth(), insideMargin = PaddingValues(CardInset)) {
+        Column(modifier = Modifier.padding(ContentPadding)) {
             Text(
                 text = stringResource(HostCatalog.labelRes(host)),
                 fontSize = 16.sp,
@@ -465,8 +592,8 @@ private fun HostIdentityCard(host: String, hostVersion: String?, readOnly: Boole
 
 @Composable
 private fun InjectionCard(hookStatus: SettingsModel.HookStatus?) {
-    Card(modifier = Modifier.fillMaxWidth(), insideMargin = PaddingValues(0.dp)) {
-        Column(modifier = Modifier.padding(16.dp)) {
+    Card(modifier = Modifier.fillMaxWidth(), insideMargin = PaddingValues(CardInset)) {
+        Column(modifier = Modifier.padding(ContentPadding)) {
             Text(
                 text = stringResource(R.string.title_injection),
                 fontSize = 16.sp,
@@ -514,6 +641,43 @@ private fun InjectionCard(hookStatus: SettingsModel.HookStatus?) {
     }
 }
 
+/** 模块概览：模块版本 / 框架 / 配置更新时间。 */
+@Composable
+private fun ModuleCard(state: SettingsModel.HostState?, readOnly: Boolean) {
+    Card(modifier = Modifier.fillMaxWidth(), insideMargin = PaddingValues(CardInset)) {
+        Column(modifier = Modifier.padding(ContentPadding)) {
+            Text(
+                text = stringResource(R.string.title_module),
+                fontSize = 16.sp,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                text = stringResource(R.string.label_module_version, BuildConfig.VERSION_NAME),
+                fontSize = 13.sp,
+                color = MiuixTheme.colorScheme.onSurfaceContainerVariant,
+                modifier = Modifier.padding(top = 8.dp),
+            )
+            Text(
+                text = stringResource(R.string.label_framework, stringResource(R.string.framework_name)),
+                fontSize = 13.sp,
+                color = MiuixTheme.colorScheme.onSurfaceContainerVariant,
+                modifier = Modifier.padding(top = 2.dp),
+            )
+            if (!readOnly && state != null && state.updatedAt > 0L) {
+                Text(
+                    text = stringResource(
+                        R.string.injection_ok_hint,
+                        HostInfo.formatTime(state.updatedAt),
+                    ),
+                    fontSize = 12.sp,
+                    color = MiuixTheme.colorScheme.onSurfaceContainerVariant,
+                    modifier = Modifier.padding(top = 2.dp),
+                )
+            }
+        }
+    }
+}
+
 @Composable
 private fun VibrationCard(
     isDown: Boolean,
@@ -554,7 +718,7 @@ private fun VibrationCard(
         onStateChange(if (isDown) state.copy(downStrength = value) else state.copy(upStrength = value))
     }
 
-    Card(modifier = Modifier.fillMaxWidth(), insideMargin = PaddingValues(0.dp)) {
+    Card(modifier = Modifier.fillMaxWidth(), insideMargin = PaddingValues(CardInset)) {
         OverlayDropdownPreference(
             title = stringResource(
                 if (isDown) R.string.title_down_vibration else R.string.title_up_vibration,
@@ -583,7 +747,7 @@ private fun VibrationCard(
         }
 
         AnimatedVisibility(visible = mode == 2) {
-            Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+            Column(modifier = Modifier.padding(horizontal = ContentPadding, vertical = 8.dp)) {
                 Text(
                     text = stringResource(R.string.duration_label, direction, duration.toInt()),
                     fontSize = 14.sp,
@@ -615,7 +779,7 @@ private fun VibrationCard(
         }
 
         AnimatedVisibility(visible = mode == 3) {
-            Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+            Column(modifier = Modifier.padding(horizontal = ContentPadding, vertical = 8.dp)) {
                 val fallback = SettingsModel.defaultCustomHaptic()
                 val wave = waveform ?: if (isDown) fallback.down!! else fallback.up!!
                 Text(
@@ -695,9 +859,8 @@ private fun OtherOptionsCard(
     readOnly: Boolean,
     onReset: () -> Unit,
     onReload: () -> Unit,
-    onOpenModuleSettings: () -> Unit,
 ) {
-    Card(modifier = Modifier.fillMaxWidth(), insideMargin = PaddingValues(0.dp)) {
+    Card(modifier = Modifier.fillMaxWidth(), insideMargin = PaddingValues(CardInset)) {
         ArrowPreference(
             title = stringResource(R.string.action_reset_default),
             enabled = !readOnly,
@@ -723,18 +886,6 @@ private fun OtherOptionsCard(
                 )
             },
             onClick = onReload,
-        )
-        ArrowPreference(
-            title = stringResource(R.string.title_module_settings),
-            startAction = {
-                Icon(
-                    MiuixIcons.Settings,
-                    null,
-                    modifier = Modifier.padding(end = 12.dp),
-                    tint = MiuixTheme.colorScheme.primary,
-                )
-            },
-            onClick = onOpenModuleSettings,
         )
     }
 }

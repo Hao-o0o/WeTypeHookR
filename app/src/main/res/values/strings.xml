@@ -124,6 +124,13 @@
     <string name="toast_open_settings_failed">无法在输入法内打开设置页，请反馈输入法版本</string>
 
     <string name="read_only_hint">当前为只读查看</string>
-    <string name="action_import_legacy">导入旧配置</string>
-    <string name="summary_import_legacy">从旧 config.xml 迁移设置（仅一次）</string>
+
+    <string name="tab_home">首页</string>
+    <string name="tab_config">配置</string>
+    <string name="tab_settings">设置</string>
+    <string name="title_module">模块</string>
+    <string name="label_module_version">模块版本 %1$s</string>
+    <string name="label_framework">框架 %1$s</string>
+    <string name="framework_name">LibXposed API 102</string>
+    <string name="title_about_author">关于作者</string>
 </resources>

@@ -17,7 +17,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -29,7 +28,6 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringArrayResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
@@ -41,7 +39,6 @@ import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Help
 import top.yukonga.miuix.kmp.icon.extended.Import
-import top.yukonga.miuix.kmp.icon.extended.Info
 import top.yukonga.miuix.kmp.icon.extended.Notes
 import top.yukonga.miuix.kmp.icon.extended.UploadCloud
 import top.yukonga.miuix.kmp.preference.ArrowPreference
@@ -50,24 +47,22 @@ import top.yukonga.miuix.kmp.preference.SwitchPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import java.io.File
 
-/** 与设置页一致的页面水平内边距与卡片间距。 */
-private val PagePadding = 12.dp
+// 与设置页保持同一套间距：页面 16dp / 卡片内容 16dp（叠加卡片内缩 4dp = 20dp）
+private val PagePadding = 16.dp
+private val CardInset = 4.dp
+private val ContentPadding = 16.dp
 private val CardGap = 12.dp
 
-/** 卡片内自定义内容使用的水平内边距。 */
-private val ContentPadding = 16.dp
-
 /**
- * 模块设置：颜色模式、配置导入导出、导入旧配置、调试 / 帮助 / 关于入口。
+ * 设置板块：模块设置（颜色模式、配置导入导出）+ 调试 / 帮助入口 + 关于。
  */
 @Composable
-fun ModuleSettingsPage(
+fun SettingsContent(
     state: SettingsModel.HostState?,
     readOnly: Boolean,
-    topInset: Dp,
+    insets: PaddingValues,
     onOpenDebug: () -> Unit,
     onOpenHelp: () -> Unit,
-    onOpenAbout: () -> Unit,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -113,13 +108,13 @@ fun ModuleSettingsPage(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(top = topInset)
+            .padding(top = insets.calculateTopPadding())
             .verticalScroll(rememberScrollState())
             .padding(horizontal = PagePadding),
     ) {
         Spacer(Modifier.height(CardGap))
 
-        Card(modifier = Modifier.fillMaxWidth(), insideMargin = PaddingValues(0.dp)) {
+        Card(modifier = Modifier.fillMaxWidth(), insideMargin = PaddingValues(CardInset)) {
             OverlayDropdownPreference(
                 title = stringResource(R.string.title_color_mode),
                 items = colorModes,
@@ -159,32 +154,14 @@ fun ModuleSettingsPage(
                 },
                 onClick = { importLauncher.launch(arrayOf("application/json", "text/plain")) },
             )
-            ArrowPreference(
-                title = stringResource(R.string.action_import_legacy),
-                summary = stringResource(R.string.summary_import_legacy),
-                enabled = !readOnly,
-                onClick = {
-                    val legacy = HostPaths.legacyXml(context)
-                    val parsed = if (legacy.isFile) {
-                        runCatching { LegacyConfigImporter.parseLegacyXml(legacy.readText()) }.getOrNull()
-                    } else {
-                        null
-                    }
-                    if (parsed == null) {
-                        Toast.makeText(context, readFailed, Toast.LENGTH_SHORT).show()
-                    } else {
-                        SettingsStore.updateAsync(context, context.packageName) { it.copy(settings = parsed) }
-                        Toast.makeText(context, importedText, Toast.LENGTH_SHORT).show()
-                    }
-                },
-            )
         }
 
         Spacer(Modifier.height(CardGap))
 
-        Card(modifier = Modifier.fillMaxWidth(), insideMargin = PaddingValues(0.dp)) {
+        Card(modifier = Modifier.fillMaxWidth(), insideMargin = PaddingValues(CardInset)) {
             ArrowPreference(
                 title = stringResource(R.string.title_debug_logs),
+                summary = stringResource(R.string.summary_debug_logs),
                 startAction = {
                     Icon(
                         MiuixIcons.Notes,
@@ -208,22 +185,81 @@ fun ModuleSettingsPage(
                 },
                 onClick = onOpenHelp,
             )
-            ArrowPreference(
-                title = stringResource(R.string.title_about),
-                startAction = {
-                    Icon(
-                        MiuixIcons.Info,
-                        null,
-                        modifier = Modifier.padding(end = 12.dp),
-                        tint = MiuixTheme.colorScheme.primary,
-                    )
-                },
-                onClick = onOpenAbout,
-            )
         }
 
         Spacer(Modifier.height(CardGap))
-        Spacer(Modifier.navigationBarsPadding())
+        AboutCard()
+        Spacer(Modifier.height(CardGap))
+
+        Spacer(Modifier.height(insets.calculateBottomPadding()))
+    }
+}
+
+/** 关于作者：外链与赞助二维码。 */
+@Composable
+private fun AboutCard() {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val savedText = stringResource(R.string.toast_saved_to_gallery)
+    val saveFailed = stringResource(R.string.toast_save_failed)
+    val linkUnavailable = stringResource(R.string.link_unavailable)
+    val openFailed = stringResource(R.string.toast_open_link_failed)
+
+    fun openLink(url: String?) {
+        if (url.isNullOrBlank()) {
+            Toast.makeText(context, linkUnavailable, Toast.LENGTH_SHORT).show()
+            return
+        }
+        runCatching {
+            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+        }.onFailure { Toast.makeText(context, openFailed, Toast.LENGTH_SHORT).show() }
+    }
+
+    Card(modifier = Modifier.fillMaxWidth(), insideMargin = PaddingValues(CardInset)) {
+        Column(modifier = Modifier.padding(ContentPadding)) {
+            Text(
+                text = stringResource(R.string.title_about_author),
+                fontSize = 16.sp,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                text = stringResource(R.string.summary_sponsor),
+                fontSize = 12.sp,
+                color = MiuixTheme.colorScheme.onSurfaceContainerVariant,
+                modifier = Modifier.padding(top = 4.dp),
+            )
+            Image(
+                painter = painterResource(R.drawable.sponsor),
+                contentDescription = stringResource(R.string.sponsor_qr_a11y),
+                modifier = Modifier
+                    .padding(top = 12.dp)
+                    .fillMaxWidth(),
+            )
+        }
+        ArrowPreference(
+            title = stringResource(R.string.title_repo),
+            summary = AboutLinks.REPO,
+            onClick = { openLink(AboutLinks.REPO) },
+        )
+        ArrowPreference(
+            title = stringResource(R.string.title_coolapk),
+            summary = AboutLinks.COOLAPK ?: linkUnavailable,
+            onClick = { openLink(AboutLinks.COOLAPK) },
+        )
+        ArrowPreference(
+            title = stringResource(R.string.title_channel),
+            summary = AboutLinks.CHANNEL ?: linkUnavailable,
+            onClick = { openLink(AboutLinks.CHANNEL) },
+        )
+        ArrowPreference(
+            title = stringResource(R.string.action_save_image),
+            onClick = {
+                scope.launch {
+                    val ok = withContext(Dispatchers.IO) { AboutLinks.saveSponsor(context) }
+                    Toast.makeText(context, if (ok) savedText else saveFailed, Toast.LENGTH_SHORT).show()
+                }
+            },
+        )
     }
 }
 
@@ -232,7 +268,7 @@ fun ModuleSettingsPage(
 fun DebugPage(
     state: SettingsModel.HostState?,
     readOnly: Boolean,
-    topInset: Dp,
+    insets: PaddingValues,
     onSettingsChange: (SettingsModel.SettingsState) -> Unit,
 ) {
     val context = LocalContext.current
@@ -272,12 +308,12 @@ fun DebugPage(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(top = topInset)
+            .padding(top = insets.calculateTopPadding())
             .verticalScroll(rememberScrollState())
             .padding(horizontal = PagePadding),
     ) {
         Spacer(Modifier.height(CardGap))
-        Card(modifier = Modifier.fillMaxWidth(), insideMargin = PaddingValues(0.dp)) {
+        Card(modifier = Modifier.fillMaxWidth(), insideMargin = PaddingValues(CardInset)) {
             SwitchPreference(
                 title = stringResource(R.string.title_debug_logs),
                 summary = stringResource(R.string.summary_debug_logs),
@@ -306,23 +342,23 @@ fun DebugPage(
             )
         }
         Spacer(Modifier.height(CardGap))
-        Spacer(Modifier.navigationBarsPadding())
+        Spacer(Modifier.height(insets.calculateBottomPadding()))
     }
 }
 
 /** 帮助：使用说明与波形格式（内置文案，不依赖网络）。 */
 @Composable
-fun HelpPage(topInset: Dp) {
+fun HelpPage(insets: PaddingValues) {
     val lines = stringArrayResource(R.array.help_lines).toList()
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(top = topInset)
+            .padding(top = insets.calculateTopPadding())
             .verticalScroll(rememberScrollState())
             .padding(horizontal = PagePadding),
     ) {
         Spacer(Modifier.height(CardGap))
-        Card(modifier = Modifier.fillMaxWidth(), insideMargin = PaddingValues(0.dp)) {
+        Card(modifier = Modifier.fillMaxWidth(), insideMargin = PaddingValues(CardInset)) {
             Column(modifier = Modifier.padding(ContentPadding)) {
                 Text(
                     text = stringResource(R.string.title_help),
@@ -340,93 +376,7 @@ fun HelpPage(topInset: Dp) {
             }
         }
         Spacer(Modifier.height(CardGap))
-        Spacer(Modifier.navigationBarsPadding())
-    }
-}
-
-/** 关于：仓库 / 酷安 / 频道 / 赞助二维码。链接缺失时显示占位文案。 */
-@Composable
-fun AboutPage(topInset: Dp) {
-    val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-    val savedText = stringResource(R.string.toast_saved_to_gallery)
-    val saveFailed = stringResource(R.string.toast_save_failed)
-    val linkUnavailable = stringResource(R.string.link_unavailable)
-    val openFailed = stringResource(R.string.toast_open_link_failed)
-
-    fun openLink(url: String?) {
-        if (url.isNullOrBlank()) {
-            Toast.makeText(context, linkUnavailable, Toast.LENGTH_SHORT).show()
-            return
-        }
-        runCatching {
-            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
-        }.onFailure { Toast.makeText(context, openFailed, Toast.LENGTH_SHORT).show() }
-    }
-
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(top = topInset)
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = PagePadding),
-    ) {
-        Spacer(Modifier.height(CardGap))
-
-        Card(modifier = Modifier.fillMaxWidth(), insideMargin = PaddingValues(0.dp)) {
-            ArrowPreference(
-                title = stringResource(R.string.title_repo),
-                summary = AboutLinks.REPO,
-                onClick = { openLink(AboutLinks.REPO) },
-            )
-            ArrowPreference(
-                title = stringResource(R.string.title_coolapk),
-                summary = AboutLinks.COOLAPK ?: linkUnavailable,
-                onClick = { openLink(AboutLinks.COOLAPK) },
-            )
-            ArrowPreference(
-                title = stringResource(R.string.title_channel),
-                summary = AboutLinks.CHANNEL ?: linkUnavailable,
-                onClick = { openLink(AboutLinks.CHANNEL) },
-            )
-        }
-
-        Spacer(Modifier.height(CardGap))
-
-        Card(modifier = Modifier.fillMaxWidth(), insideMargin = PaddingValues(0.dp)) {
-            Column(modifier = Modifier.padding(ContentPadding)) {
-                Text(
-                    text = stringResource(R.string.title_sponsor),
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.SemiBold,
-                )
-                Text(
-                    text = stringResource(R.string.summary_sponsor),
-                    fontSize = 12.sp,
-                    color = MiuixTheme.colorScheme.onSurfaceContainerVariant,
-                    modifier = Modifier.padding(top = 4.dp),
-                )
-                Image(
-                    painter = painterResource(R.drawable.sponsor),
-                    contentDescription = stringResource(R.string.sponsor_qr_a11y),
-                    modifier = Modifier
-                        .padding(top = 12.dp)
-                        .fillMaxWidth(),
-                )
-            }
-            ArrowPreference(
-                title = stringResource(R.string.action_save_image),
-                onClick = {
-                    scope.launch {
-                        val ok = withContext(Dispatchers.IO) { AboutLinks.saveSponsor(context) }
-                        Toast.makeText(context, if (ok) savedText else saveFailed, Toast.LENGTH_SHORT).show()
-                    }
-                },
-            )
-        }
-
-        Spacer(Modifier.height(CardGap))
-        Spacer(Modifier.navigationBarsPadding())
+        Spacer(Modifier.height(insets.calculateBottomPadding()))
     }
 }
 

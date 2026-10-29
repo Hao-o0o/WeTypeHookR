@@ -124,6 +124,13 @@
     <string name="toast_open_settings_failed">Cannot open settings inside the IME</string>
 
     <string name="read_only_hint">Read-only view</string>
-    <string name="action_import_legacy">Import legacy config</string>
-    <string name="summary_import_legacy">Migrate settings from an old config.xml (once)</string>
+
+    <string name="tab_home">Home</string>
+    <string name="tab_config">Config</string>
+    <string name="tab_settings">Settings</string>
+    <string name="title_module">Module</string>
+    <string name="label_module_version">Module %1$s</string>
+    <string name="label_framework">Framework %1$s</string>
+    <string name="framework_name">LibXposed API 102</string>
+    <string name="title_about_author">About the author</string>
 </resources>
