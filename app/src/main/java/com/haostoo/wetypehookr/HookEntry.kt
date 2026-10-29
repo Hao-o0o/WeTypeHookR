@@ -65,10 +65,10 @@ object HookEntry : YukiHookXposedModule {
                 }
 
                 // 崩溃留证：宿主进程里模块导致的未捕获异常写进 diag.log（logcat 会轮转丢失）。
-                appContext?.let { HostDiag.installCrashHandler(it) }
+                hostApplication?.let { HostDiag.installCrashHandler(it) }
 
                 installTouchHooks()
-                appContext?.let { SettingsStore.attach(it, host) }
+                hostApplication?.let { SettingsStore.attach(it, host) }
 
                 withApplicationReady { app ->
                     registerActivities(app, host)
@@ -143,7 +143,7 @@ object HookEntry : YukiHookXposedModule {
     private fun PackageParam.loaders(): List<ClassLoader> =
         generateSequence(hostClassLoader) { it.parent }.toList()
 
-    /** 诊断用：把宿主声明的 Activity 全量打出来（只在启动设置页失败时调用）。 */
+    /** 诊断用：把宿主声明的 Activity 打出来（只在启动设置页失败时调用）。 */
     fun logHostActivities(activity: Activity) {
         runCatching {
             val info = activity.packageManager
@@ -152,7 +152,7 @@ object HookEntry : YukiHookXposedModule {
             Log.w(TAG, "host=${activity.packageName} proc=${currentProcessName()} activities=${names.size}")
             names.forEach { Log.w(TAG, "  activity: $it") }
             HostDiag.log(activity, "ACT", "host=${activity.packageName} n=${names.size}")
-            names.take(80).forEach { HostDiag.log(activity, "ACT", "  $it") }
+            names.take(40).forEach { HostDiag.log(activity, "ACT", "  $it") }
         }.onFailure { Log.w(TAG, "dump activities failed", it) }
     }
 

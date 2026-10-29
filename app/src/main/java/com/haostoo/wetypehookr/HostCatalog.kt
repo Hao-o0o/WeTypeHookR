@@ -47,9 +47,27 @@ object HostCatalog {
         DOUBAO to ("com.bytedance.android.input.keyboard.KeyboardView" to "onTouchEvent"),
     )
 
-    fun isSupported(host: String): Boolean = ALL.contains(host)
+    /**
+     * 承载模块 Activity 的 proxy 候选，**与 FAB 注入白名单解耦**。
+     *
+     * 豆包这里刻意优先选 `LauncherActivity`：它是导出、无签名权限、当前不在 Activity 栈里的页面。
+     * 之前用的 `SettingsActivityNext` 在栈里留下了卡死记录（`reportedDrawn=false`），
+     * 后续每次 start 都命中同一条记录，`launchMode` 变成复用语义，根本不会再实例化，
+     * 所以模块页面永远出不来。
+     */
+    private val PROXY_ACTIVITY = mapOf(
+        WETYPE to listOf(
+            "com.tencent.wetype.plugin.hld.reactnative.activity.ImeMainSettingActivity",
+            "com.tencent.wetype.plugin.hld.activity.ImeSettingActivity",
+        ),
+        DOUBAO to listOf(
+            "com.bytedance.android.doubaoime.activity.LauncherActivity",
+            "com.bytedance.android.doubaoime.activity.SettingsActivityNext",
+            "com.bytedance.android.doubaoime.activity.SettingsActivity",
+        ),
+    )
 
-    fun settingsActivity(host: String): String? = SETTINGS_ACTIVITY[host]
+    fun isSupported(host: String): Boolean = ALL.contains(host)
 
     /**
      * 是否是宿主的设置页。
@@ -73,7 +91,7 @@ object HostCatalog {
      */
     fun resolveSettingsActivity(context: android.content.Context, host: String): String? {
         val pm = context.packageManager
-        val candidates = SETTINGS_ACTIVITY_FALLBACK[host] ?: listOfNotNull(SETTINGS_ACTIVITY[host])
+        val candidates = PROXY_ACTIVITY[host] ?: listOfNotNull(SETTINGS_ACTIVITY[host])
 
         val declared = runCatching {
             pm.getPackageInfo(host, android.content.pm.PackageManager.GET_ACTIVITIES).activities.orEmpty()

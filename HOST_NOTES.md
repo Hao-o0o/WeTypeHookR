@@ -5,23 +5,35 @@
 ## 1. 寄生 Activity 的 proxy
 
 模块 Activity 通过 `registerModuleActivities(proxy)` 注册，`proxy` 必须是宿主 Manifest 中真实存在、
-`launchMode = standard`、无 ActionBar、启动无副作用的 Activity。当前取值见 `HostCatalog.SETTINGS_ACTIVITY`。
+`launchMode = standard`、无 ActionBar、启动无副作用的 Activity。候选表见 `HostCatalog.PROXY_ACTIVITY`。
 
 | 宿主 | proxy | launchMode | 结论 |
 | --- | --- | --- | --- |
-| `com.tencent.wetype` | `com.tencent.wetype.plugin.hld.reactnative.activity.ImeMainSettingActivity` | 待验证 | 待验证 |
-| `com.bytedance.android.doubaoime` | 首选 `…activity.SettingsActivityNext`（失败时按候选表逐个尝试） | 待验证 | 打不开设置页，已在点击路径加诊断日志 |
+| `com.tencent.wetype` | `com.tencent.wetype.plugin.hld.reactnative.activity.ImeMainSettingActivity` | 待验证 | 可打开（实测） |
+| `com.bytedance.android.doubaoime` | `com.bytedance.android.doubaoime.activity.LauncherActivity` | 待验证 | 可打开（实测） |
+
+豆包为什么不用 `SettingsActivityNext`（实测踩过的坑）：
+
+- 它带 `signature` 权限 `com.bytedance.android.doubaoime.permission.activity.SettingsActivityNext`；
+- 更关键的是**记录复用**：一旦某次启动留在栈里的实例没画出来（`reportedDrawn=false`），
+  之后每次 start 都命中同一条 `ActivityRecord`，走 `singleTop` 语义只回调 `onNewIntent`，
+  根本不会再实例化 → 表现就是「点了没反应」，而且 `startActivity` 不报错。
+- 换成当前不在栈里的 `LauncherActivity` 后，每次点击都会创建新记录，代理替换正常。
+
+由此得到的选 proxy 规则：**导出、无权限限制、且当前不在 Activity 栈里**。
 
 验证命令：
 
 ```bash
 adb shell dumpsys package com.tencent.wetype | sed -n '/Activities:/,/Providers:/p'
 adb shell dumpsys package com.bytedance.android.doubaoime | sed -n '/Activities:/,/Providers:/p'
+adb shell dumpsys activity activities | grep -A3 记录里的 ActivityRecord
 ```
 
 判据：
 
 - `launchMode` 不是 `standard` 时，二次打开可能只走 `onNewIntent`，页面不会重建 → 换候选；
+- 记录已存在且 `reportedDrawn=false` → 该 proxy 已被污染，换候选；
 - 主题带 ActionBar 或透明背景 → 换候选；
 - 启动本身带副作用（例如自动弹权限）→ 换候选。
 
