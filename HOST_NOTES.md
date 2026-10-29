@@ -10,7 +10,7 @@
 | 宿主 | proxy | launchMode | 结论 |
 | --- | --- | --- | --- |
 | `com.tencent.wetype` | `com.tencent.wetype.plugin.hld.reactnative.activity.ImeMainSettingActivity` | 待验证 | 待验证 |
-| `com.bytedance.android.doubaoime` | `com.bytedance.android.doubaoime.activity.SettingsActivityNext` | 待验证 | 待验证 |
+| `com.bytedance.android.doubaoime` | 首选 `…activity.SettingsActivityNext`（失败时按候选表逐个尝试） | 待验证 | 打不开设置页，已在点击路径加诊断日志 |
 
 验证命令：
 
@@ -24,6 +24,20 @@ adb shell dumpsys package com.bytedance.android.doubaoime | sed -n '/Activities:
 - `launchMode` 不是 `standard` 时，二次打开可能只走 `onNewIntent`，页面不会重建 → 换候选；
 - 主题带 ActionBar 或透明背景 → 换候选；
 - 启动本身带副作用（例如自动弹权限）→ 换候选。
+
+## 1.1 设置页打不开时的定位步骤
+
+1. 打开该宿主的设置页，点一次 FAB。
+2. 取日志：
+
+```bash
+adb logcat -c && adb logcat -s WETYPE_FAB WETYPE_HOOK WETYPE_UI
+```
+
+3. 关注三行：
+   - `launch settings: host=… proxy=… proc=…` → 说明点击生效，并给出当前选中的 proxy 与所在进程；
+   - `launch SettingsActivity failed: host=… proxy=…` 后的异常：`ActivityNotFoundException` = proxy 不在宿主清单，`SecurityException` = 权限受限；
+   - 紧随其后的 `host=… proc=… activities=N` 与 `activity: …` 列表 = 宿主真实声明的全部 Activity，用其中的设置页类名替换 `HostCatalog.SETTINGS_ACTIVITY_FALLBACK` 里的候选。
 
 ## 2. 触摸 Hook 目标
 

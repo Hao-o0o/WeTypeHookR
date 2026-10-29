@@ -150,7 +150,7 @@ object HookEntry : YukiHookXposedModule {
 | `targetApiVersion` | 目标 API，本项目 102 |
 | `minApiVersion` | 默认 101，不可低于 101 |
 | `scope` / `staticScope` | 推荐作用域 / 是否锁定为静态 |
-| `hotReload` | `NONE` / `MANUAL` / `AUTO`，本项目 `NONE` |
+| `hotReload` | `NONE` / `MANUAL` / `AUTO`，本项目 `AUTO`（需要 API 102） |
 | `entryClassName` | 生成的入口类名（默认由注解类推导） |
 | `javaEntries` / `nativeEntries` | 附加的原生入口（本项目不用） |
 
@@ -260,7 +260,9 @@ API 102 行为约束：模块不得调用 `de.robv.android.xposed` 遗留 API；
 
 - 关闭（`finish()`）即返回输入法设置页，不自定义转场。
 - 任务栈会多一条记录，Recent 中显示为输入法自身，可接受。
-- 热重载要求模块 Activity 已销毁；本项目 `hotReload = NONE`，不涉及。
+- 热重载：`hotReload = AUTO`，通过 `registerModuleLifecycle` 参与框架的重载流程——
+  `canReload` 在 `SettingsActivity.isAlive` 为真时拒绝重载；`onDispose` 停掉 `SettingsStore` 的文件监听、
+  `DebugLog` 写盘线程并清空 `HookRuntime`；`onReloaded` 只记日志。
 
 ---
 

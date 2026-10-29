@@ -31,6 +31,11 @@ object DebugLog {
 
     private val hardwareWritten = AtomicBoolean(false)
 
+    /** 热重载前停止写盘线程。 */
+    fun shutdown() {
+        runCatching { executor.shutdownNow() }
+    }
+
     fun isEnabled(): Boolean = HapticEngine.cachedSettings.debugLog
 
     fun log(context: Context, category: String, message: String) {

@@ -29,7 +29,7 @@ object HostFabInjector {
     private const val VIEW_TAG = "haostoo_host_fab_v1"
 
     fun isTargetSettingsActivity(hostPackage: String, activityClass: String): Boolean =
-        HostCatalog.settingsActivity(hostPackage) == activityClass
+        HostCatalog.isSettingsActivity(hostPackage, activityClass)
 
     fun attach(activity: Activity, hostPackage: String, ui: SettingsModel.UiState) {
         val decor = activity.window?.decorView as? ViewGroup ?: return
@@ -150,15 +150,19 @@ object HostFabInjector {
     }
 
     private fun launchSettings(activity: Activity) {
+        val host = activity.packageName
+        val proxy = HostCatalog.resolveSettingsActivity(host, activity.classLoader)
+        Log.i(TAG, "launch settings: host=$host proxy=$proxy proc=${HookEntry.currentProcessName()}")
+
         runCatching {
-            // 模块 Activity 的注册是「每进程一次」的：withApplicationReady 只在首个进程回调，
-            // 输入法设置页若跑在别的进程（如豆包），点击时补一次注册，否则会 ActivityNotFound。
-            HostCatalog.settingsActivity(activity.packageName)?.let { proxy ->
-                activity.registerModuleActivities(proxy)
-            }
+            // 模块 Activity 的注册是「每进程一次」的：设置页可能在别的进程里，
+            // 点击时补一次注册（内部有 isActivityProxyRegistered 去重），否则会 ActivityNotFound。
+            proxy?.let { activity.registerModuleActivities(it) }
             activity.startActivity(android.content.Intent(activity, SettingsActivity::class.java))
         }.onFailure {
-            Log.w(TAG, "launch SettingsActivity failed", it)
+            Log.w(TAG, "launch SettingsActivity failed: host=$host proxy=$proxy", it)
+            // 失败时把宿主声明的 Activity 全量打出来，便于定位真实可用的 proxy。
+            HookEntry.logHostActivities(activity)
             Toast.makeText(activity, R.string.toast_open_settings_failed, Toast.LENGTH_LONG).show()
         }
     }

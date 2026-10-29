@@ -72,6 +72,17 @@ object HookRuntime {
         )
     }
 
+    /** 热重载前清空进程内状态，下一实例重新填充。 */
+    fun reset() {
+        hostPackage = ""
+        hookInstalled = false
+        configUpdatedAt = 0L
+        heartbeatAt = 0L
+        frameworkName = "unknown"
+        frameworkVersion = "unknown"
+        frameworkApiVersion = -1
+    }
+
     fun onConfigApplied(updatedAt: Long) {
         configUpdatedAt = updatedAt
         heartbeatAt = System.currentTimeMillis()

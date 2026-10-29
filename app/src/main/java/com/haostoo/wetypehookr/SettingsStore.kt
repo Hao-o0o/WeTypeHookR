@@ -61,6 +61,14 @@ object SettingsStore {
         startWatching(context, host)
     }
 
+    /** 热重载前释放：停掉文件监听与去抖，下次 attach 重新挂。 */
+    @Synchronized
+    fun detach() {
+        stopWatching()
+        watchedHost = null
+        appContext = null
+    }
+
     /** 只读地取当前内存快照。 */
     fun current(): SettingsModel.HostState = _state.value
 
