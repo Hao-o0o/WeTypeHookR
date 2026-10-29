@@ -1,7 +1,7 @@
 # WeTypeHookR（WeDouVibrator）开发文档
 
 > **文档定位**：目标架构与规范参考（v1.4）。实施步骤、阶段闸门、文件清单见 `TASK_HOST_SETTINGS_MIGRATION.md`。
-> **状态说明**：底座（P0）、宿主内设置页（P2）与配置落宿主目录（P1）已完成。配置当前实现为 `settings.json` / `haptic.json` / `ui.json` 三个文件，**本文 §7 描述的是收敛后的单快照 `state.json`**，该收敛（P1.5）与 P3 模块设置页、P4 文案资源化、P5 清理回归均待做。
+> **状态说明**：P0–P4 已完成并提交到 `dev`。配置即本文 §7 描述的单快照 `state.json`（kotlinx.serialization + `AtomicFile` + `FileObserver` 热更新，含旧三文件/`config.xml` 迁移）；设置页为宿主进程内的 `SettingsApp`（宿主切换只读查看、模块设置/调试/帮助/关于）；文案已全量资源化。剩余：真机回归（见 `HOST_NOTES.md`）与本文终稿校对。
 > **技术底座**：LibXposed API 102 + YukiHook 1.5.0 + Miuix 0.9.3 + Compose。
 > 历史交接类文档（`HANDOFF.md`、`API102_MIGRATION_GUIDE.md`、`HOST_INJECTED_SETTINGS_ACTIVITY_GUIDE.md`）仅作背景，不再作为设计依据。
 
@@ -50,7 +50,7 @@ WeTypeHookR/
 │       │   ├── HookRuntime.kt           # 进程内注入状态
 │       │   ├── BaseHostActivity.kt      # AppCompatActivity + ModuleActivity
 │       │   ├── SettingsActivity.kt      # ★ 宿主内设置页
-│       │   ├── SettingsScreen.kt        # 设置内容（复用现有卡片）
+│       │   ├── SettingsScreen.kt        # SettingsApp：一级页卡片 + 二级页路由 + 宿主选择
 │       │   ├── SettingsTopBar.kt        # 标题 + 宿主副标题 + 切换入口
 │       │   ├── WaveformEditor.kt        # 波形编辑器 + 草稿模型
 │       │   ├── WaveformCurve.kt         # PCHIP 曲线绘制
@@ -63,7 +63,7 @@ WeTypeHookR/
 │       └── res/
 │           ├── values/strings.xml        # ★ 中文文案（唯一文案来源）
 │           ├── values-en/strings.xml     # 英文文案
-│           ├── values/arrays.xml         # 模式 / 系统风格 / 颜色模式列表
+│           ├── values/arrays.xml         # 模式 / 系统风格 / 颜色模式 / 帮助条目
 │           ├── values/themes.xml         # Theme.WeTypeHookR（AppCompat 无 ActionBar）
 │           └── drawable-nodpi/sponsor.png
 ├── settings.gradle.kts / build.gradle.kts

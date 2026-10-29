@@ -39,3 +39,14 @@ adb shell dumpsys package com.bytedance.android.doubaoime | sed -n '/Activities:
 - 跨宿主数据目录不可互访：设置页只能读写自己所在宿主的 `<host>/files/haostoo/`。
   因此「切换宿主」在本形态下必然只读，当前实现按此收敛：每个输入法内只管理自己的配置。
 - 资源包 ID 使用 `0x64`；同一宿主若已装其他模块占用该段，需改到 `0x65`–`0x7e` 并重新验证。
+
+## 4. 配置文件
+
+- 唯一快照：`<host>/files/haostoo/config/state.json`（`schema = 3`）。
+- 旧 `settings.json` / `haptic.json` / `ui.json` / `config.xml` 迁移后移入 `<host>/files/haostoo/config/legacy/`，不再读取。
+- 内容非法时改名为 `state.bad.<时间戳>.json`，随后按默认值运行并写 `WETYPE_CFG` 日志。
+
+```bash
+adb shell ls /sdcard/Android/data/com.tencent.wetype/files/haostoo/config
+adb shell cat /sdcard/Android/data/com.tencent.wetype/files/haostoo/config/state.json
+```

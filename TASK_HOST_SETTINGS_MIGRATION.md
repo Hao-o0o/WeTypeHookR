@@ -5,9 +5,13 @@
 > **技术底座**：YukiHook（`yukihook-core` + `yukihook-runtime-libxposed` + `yukihook-compiler`）跑在 LibXposed API 102 之上
 > **配套文档**：`DEVELOPMENT_GUIDE.md`（架构与规范参考）。两者冲突时以本文为准。
 
-> **实施进度（2026-10-29）**
-> - 已完成：P0 底座切换（`82dd316`）、设置页顶栏与宿主内页面（`6a9379a`）、launcher 与壳层移除、配置落宿主目录。
-> - **待做**：P1.5 存储收敛为单快照（当前仍是 `settings.json` / `haptic.json` / `ui.json` 三文件）；P3 模块设置与调试页；P4 文案资源化（仅有 11 条资源，源码中仍有约 90 处中文字面量）；P5 残留清理与回归。
+> **实施进度（2026-10-29 更新）**
+> - P0 底座切换：`82dd316`（YukiHook 入口 + KSP 生成 `META-INF/xposed`，资源包 ID `0x64`）。
+> - P1.5 单快照：`5080187`（`state.json` + kotlinx.serialization + `AtomicFile`，含旧三件套/`config.xml` 迁移与损坏留证）。
+> - P2 设置页：`6a9379a` + `c27b6e8`（宿主内 `SettingsActivity`、顶栏两行可点、宿主选择弹层、非本宿主只读态）。
+> - P3 模块设置与调试页：`c27b6e8`（颜色模式、导入导出、导入旧配置、调试日志、帮助、关于/赞助）。
+> - P4 文案资源化：`c27b6e8`（`strings.xml` / `values-en` / `arrays.xml` 全量，`.kt` 中无中文字面量，闸门 grep 已通过）。
+> - **待做**：P5 的真机回归（§11 清单）与 `DEVELOPMENT_GUIDE.md` 终稿回写；`master` 未动。
 
 ---
 
