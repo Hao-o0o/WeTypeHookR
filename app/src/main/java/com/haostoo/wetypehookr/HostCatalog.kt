@@ -35,9 +35,9 @@ object HostCatalog {
         ),
         DOUBAO to listOf(
             "com.bytedance.android.doubaoime.activity.SettingsActivityNext",
+            "com.bytedance.android.doubaoime.activity.LauncherActivity",
             "com.bytedance.android.doubaoime.activity.SettingsActivity",
             "com.bytedance.android.doubaoime.setting.SettingsActivity",
-            "com.bytedance.android.doubaoime.activity.MainActivity",
         ),
     )
 
@@ -65,16 +65,39 @@ object HostCatalog {
     }
 
     /**
-     * 在宿主 ClassLoader 里挑一个真实存在的 proxy。
+     * 挑一个可用的 proxy。
      *
-     * 都找不到时退回首选值：让框架照常改写 Intent，失败日志里也能看到真实类名。
+     * 类存在 ≠ 在宿主清单里声明，而 proxy 必须是宿主已声明的 Activity，
+     * 所以先用 `getActivityInfo` 逐个验证候选；都不中时，从宿主声明的 Activity 里
+     * 找一个 exported 且无权限限制的「Setting 页面」兜底；再不行才退回首选值（失败会留日志）。
      */
-    fun resolveSettingsActivity(host: String, loader: ClassLoader?): String? {
-        val candidates = SETTINGS_ACTIVITY_FALLBACK[host] ?: return SETTINGS_ACTIVITY[host]
-        if (loader == null) return candidates.firstOrNull()
-        return candidates.firstOrNull { name ->
-            runCatching { Class.forName(name, false, loader) }.isSuccess
-        } ?: candidates.firstOrNull()
+    fun resolveSettingsActivity(context: android.content.Context, host: String): String? {
+        val pm = context.packageManager
+        val candidates = SETTINGS_ACTIVITY_FALLBACK[host] ?: listOfNotNull(SETTINGS_ACTIVITY[host])
+
+        val declared = runCatching {
+            pm.getPackageInfo(host, android.content.pm.PackageManager.GET_ACTIVITIES).activities.orEmpty()
+        }.getOrDefault(emptyArray())
+
+        fun isDeclared(name: String): Boolean = declared.any { it.name == name }
+
+        fun isStartable(name: String): Boolean = declared.any {
+            it.name == name && it.exported && it.permission.isNullOrBlank()
+        }
+
+        // 优先级：已声明且导出无权限 > 已声明且导出（可能是 signature 权限，同 UID 可过） > 已声明
+        candidates.firstOrNull { isStartable(it) }?.let { return it }
+        candidates.firstOrNull { name ->
+            declared.any { it.name == name && it.exported }
+        }?.let { return it }
+        candidates.firstOrNull { isDeclared(it) }?.let { return it }
+
+        declared.firstOrNull {
+            it.exported && it.permission.isNullOrBlank() &&
+                it.name.startsWith(host) && it.name.contains("Setting", ignoreCase = true)
+        }?.let { return it.name }
+
+        return candidates.firstOrNull()
     }
 
     fun touchTarget(host: String): Pair<String, String>? = TOUCH_TARGET[host]

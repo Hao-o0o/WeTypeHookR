@@ -195,7 +195,11 @@ object SettingsStore {
             runCatching {
                 val target = File(legacyDir, file.name)
                 if (target.exists()) target.delete()
-                file.renameTo(target)
+                if (!file.renameTo(target)) {
+                    // 跨挂载点或权限差异时 rename 会失败，退化为拷贝后删除。
+                    file.copyTo(target, overwrite = true)
+                    file.delete()
+                }
             }.onFailure { Log.w(TAG, "move legacy failed: ${file.name}", it) }
         }
     }

@@ -151,16 +151,20 @@ object HostFabInjector {
 
     private fun launchSettings(activity: Activity) {
         val host = activity.packageName
-        val proxy = HostCatalog.resolveSettingsActivity(host, activity.classLoader)
-        Log.i(TAG, "launch settings: host=$host proxy=$proxy proc=${HookEntry.currentProcessName()}")
+        val proxy = HostCatalog.resolveSettingsActivity(activity, host)
+        val proc = HookEntry.currentProcessName()
+        Log.i(TAG, "launch settings: host=$host proxy=$proxy proc=$proc")
+        HostDiag.log(activity, "FAB", "launch host=$host proxy=$proxy proc=$proc")
 
         runCatching {
             // 模块 Activity 的注册是「每进程一次」的：设置页可能在别的进程里，
             // 点击时补一次注册（内部有 isActivityProxyRegistered 去重），否则会 ActivityNotFound。
             proxy?.let { activity.registerModuleActivities(it) }
             activity.startActivity(android.content.Intent(activity, SettingsActivity::class.java))
+            HostDiag.log(activity, "FAB", "startActivity ok proxy=$proxy")
         }.onFailure {
             Log.w(TAG, "launch SettingsActivity failed: host=$host proxy=$proxy", it)
+            HostDiag.log(activity, "FAB", "fail proxy=$proxy err=${it.javaClass.name}: ${it.message}")
             // 失败时把宿主声明的 Activity 全量打出来，便于定位真实可用的 proxy。
             HookEntry.logHostActivities(activity)
             Toast.makeText(activity, R.string.toast_open_settings_failed, Toast.LENGTH_LONG).show()

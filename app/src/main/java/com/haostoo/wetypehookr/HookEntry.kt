@@ -76,12 +76,19 @@ object HookEntry : YukiHookXposedModule {
         }
     }
 
-    /** 注册模块 Activity：proxy 由宿主 ClassLoader 里真实存在的类决定。 */
+    /** 注册模块 Activity：proxy 必须是宿主清单里真实声明、可启动的 Activity。 */
     private fun registerActivities(context: android.content.Context, host: String) {
-        val proxy = HostCatalog.resolveSettingsActivity(host, context.classLoader) ?: return
+        val proxy = HostCatalog.resolveSettingsActivity(context, host) ?: return
+        val proc = currentProcessName()
         runCatching { context.registerModuleActivities(proxy) }
-            .onSuccess { Log.i(TAG, "registerModuleActivities ok: host=$host proxy=$proxy") }
-            .onFailure { Log.w(TAG, "registerModuleActivities failed: host=$host proxy=$proxy", it) }
+            .onSuccess {
+                Log.i(TAG, "registerModuleActivities ok: host=$host proxy=$proxy proc=$proc")
+                HostDiag.log(context, "REG", "ok host=$host proxy=$proxy proc=$proc")
+            }
+            .onFailure {
+                Log.w(TAG, "registerModuleActivities failed: host=$host proxy=$proxy proc=$proc", it)
+                HostDiag.log(context, "REG", "fail host=$host proxy=$proxy proc=$proc err=$it")
+            }
     }
 
     /** 触摸 → 震动。只读内存缓存、只做副作用，不改参数也不吞结果。 */
@@ -141,6 +148,8 @@ object HookEntry : YukiHookXposedModule {
             val names = info.activities?.map { it.name }.orEmpty()
             Log.w(TAG, "host=${activity.packageName} proc=${currentProcessName()} activities=${names.size}")
             names.forEach { Log.w(TAG, "  activity: $it") }
+            HostDiag.log(activity, "ACT", "host=${activity.packageName} n=${names.size}")
+            names.take(80).forEach { HostDiag.log(activity, "ACT", "  $it") }
         }.onFailure { Log.w(TAG, "dump activities failed", it) }
     }
 

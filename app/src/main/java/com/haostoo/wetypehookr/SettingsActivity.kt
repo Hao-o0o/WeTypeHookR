@@ -24,6 +24,7 @@ class SettingsActivity : BaseHostActivity() {
 
         val host = packageName
         Log.i(TAG, "SettingsActivity onCreate host=$host pid=${Process.myPid()} filesDir=$filesDir")
+        HostDiag.log(this, "UI", "onCreate host=$host pid=${Process.myPid()}")
 
         setContent {
             SettingsApp()
@@ -32,6 +33,7 @@ class SettingsActivity : BaseHostActivity() {
 
     override fun onDestroy() {
         aliveCount.decrementAndGet()
+        HostDiag.log(this, "UI", "onDestroy host=$packageName")
         super.onDestroy()
     }
 
