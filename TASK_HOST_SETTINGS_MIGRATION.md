@@ -1,243 +1,220 @@
-# 开发跟进任务书：设置页迁入宿主进程 + 配置回归宿主目录
+# 开发任务书：设置页运行于宿主进程（YukiHook 底座）
 
-> **文档性质**：可直接执行的任务书（Task Spec），面向对本项目 0 了解的执行代理。
-> **生成时间**：2026-10-29　·　**适用基线**：`dev` 分支 `1ada506`（含 `DEVELOPMENT_GUIDE.md`）、版本 `1.3.0 (1300)`
-> **本任务会推翻 `DEVELOPMENT_GUIDE.md` 的以下结论**（完成后必须回写该文档）：独立 Launcher 设置 App、LibXposed Remote Preferences/Files 作为配置通道、`XposedService` 服务连接、`HostGrant` 一次性凭证、日志 Messenger 上报。
-> **不要凭记忆改代码**：本任务书里所有类名、方法名、签名均已对照仓库源码与 `api-102.0.0.aar` / `miuix-ui-0.9.3.aar` 校验；但**宿主侧类名、`launchMode`、主题必须真机 `dumpsys` 确认**（见 §6 P0）。
+> **文档性质**：可直接执行的施工文档，面向对本项目 0 了解的执行代理。
+> **当前版本**：`1.3.0 (1300)`　·　**分支**：`dev`
+> **技术底座**：YukiHook（`yukihook-core` + `yukihook-runtime-libxposed` + `yukihook-compiler`）跑在 LibXposed API 102 之上
+> **配套文档**：`DEVELOPMENT_GUIDE.md`（架构与规范参考）。两者冲突时以本文为准。
 
 ---
 
-## 0. 给执行者的使用说明
+## 0. 使用说明
 
-### 0.1 先读这三份（按顺序，不要跳）
+### 0.1 阅读顺序
 
 | 顺序 | 文件 | 读什么 |
 | --- | --- | --- |
-| 1 | `DEVELOPMENT_GUIDE.md` | §2 目录与依赖、§4 钩子实现要点、§7 构建与调试、§8 红线 |
-| 2 | 本文件 | 全部；尤其 §4 技术方案、§5 阶段计划、§10 禁止事项 |
-| 3 | `HOST_INJECTED_SETTINGS_ACTIVITY_GUIDE.md` | **只读 §2 与 §5 的边界讨论**，注意它的结论是"不要真的把 Activity 注册进宿主"，本任务明确推翻该结论，但其中关于 UID 校验、注入卡措辞的部分仍可参考 |
-
-`NONROOT_FRAMEWORK_SUPPORT_GUIDE.md` 已作废，不要读，不要据此恢复任何免 Root 代码。
+| 1 | 本文件 §1–§7 | 目标形态、依赖、入口、Activity、配置、UI、文案 |
+| 2 | 本文件 §8–§12 | 阶段与闸门、文件清单、验收、禁止事项、调试 |
+| 3 | `DEVELOPMENT_GUIDE.md` | miuix 组件规范（§6）、构建与排查（§7）、API 102 能力（§5） |
 
 ### 0.2 完成定义（DoD）
 
-同时满足才算完成：
-
-1. 安装模块后，桌面/启动器**没有**模块图标，`AndroidManifest.xml` 里没有任何带 `MAIN`/`LAUNCHER` 的 Activity。
-2. 在微信输入法设置页点 FAB，弹出一个**运行在微信输入法进程内**的设置页；在豆包输入法设置页点 FAB，弹出运行在豆包进程内的设置页。
-3. 设置页顶栏：第一行是模块标题，第二行是宿主名（副标题）；点击标题或副标题弹出宿主选择，可切换到另一个宿主（见 §4.8 的能力边界）。
-4. 所有配置写入 `<宿主数据目录>/haostoo/config/`，改完即时生效（无需重启输入法），Hook 通过文件变化热更新。
-5. 页面里不再出现框架连接/Remote/同步等待类文案；不再有"复制到其他宿主"。
-6. 全项目源码里**没有中文字面量**（除注释、`Texts.kt` 的映射表本身、日志 tag 与 README）。UI 文案全部来自 `Texts.kt`。
-7. `assembleRelease` 通过；两个宿主真机手测通过 §8 验收清单。
-8. 提交到 `dev` 分支；**不得**合并到 `master`（需用户批准）。
+1. 模块没有任何 launcher Activity；安装后桌面无图标，入口只在输入法设置页的 FAB。
+2. FAB 打开的设置页**运行在宿主进程内**（`packageName`、`pid`、`filesDir` 均为宿主）。
+3. 设置页顶栏：主标题为模块名，副标题为宿主名；点击标题区可切换目标宿主。
+4. 所有配置读写落在 **宿主自己的 `files` 目录**，改完即时生效（Hook 通过文件监听热更新）。
+5. 文案全部在 `res/values/strings.xml` 与 `res/values-en/strings.xml`，Compose 侧无中文字面量。
+6. `assembleRelease` 通过；两个宿主真机手测通过 §11。
+7. 提交在 `dev` 分支；**不得**合并到 `master`（需用户明确批准）。
 
 ### 0.3 工作方式
 
-- 每完成一个阶段（§5 的 P0…P5）就 `git commit` 一次，commit message 用本文件给出的建议值。
-- 每个阶段的"验证闸门"不通过，**停下来写报告**，不要带病进入下一阶段。
-- 遇到本文件未覆盖的宿主差异，先记录到仓库根目录的 `HOST_NOTES.md`（新建），再继续。
+- 按 §8 的阶段推进，**每个阶段结束必须过闸门**，不过就停下写报告，不要带病进入下一阶段。
+- 每个阶段单独 commit，message 用阶段末尾给出的建议值。
+- 遇到宿主差异（Activity 名、launchMode）记到仓库根目录 `HOST_NOTES.md`。
+- 不确定的 API 名称以 IDE 补全与 1.5.0 的 KDoc 为准，不要照文档版本号臆造。
 
 ---
 
-## 1. 背景与目标
+## 1. 目标形态
 
-### 1.1 现状（1.3.0）
-
-模块是一个独立 App：用户从桌面图标打开 `MainActivity`，进入「概览 / 宿主 / 设置」三页壳层，选宿主后进入 `HostSettingsScreen`。配置通过 LibXposed **Remote Preferences / Remote Files** 读写，需要 `XposedService` 连接与 `PROP_CAP_REMOTE` 能力；宿主内只能看到一个 FAB，点击后用 `PendingIntent` 凭证跳到模块自己的 `HostSettingsActivity`。
-
-问题：用户必须先装一个"App"，且配置依赖框架 Remote 能力，离线/不支持 Remote 的框架下设置不可写；同时模块进程与宿主进程两套存储带来 outbox/冲突/心跳等一整层复杂度。
-
-### 1.2 目标（本任务）
-
-把**设置页搬进宿主进程**，配置**回归宿主数据目录的普通文件**，删除独立 App 形态。
-
-| 编号 | 用户需求原文 | 实现要点 |
-| --- | --- | --- |
-| R1 | 移除设置应用，即模块无 MainActivity | 删除 `MainActivity` 与 `LAUNCHER` intent-filter；模块只保留模块身份（`META-INF/xposed/*`） |
-| R2 | 设置页改为向宿主注册新 activity，在此 activity 中实现模块设置 | 在宿主进程内"注册"一个未声明的 Activity：客户端 Activity 注入（stub 替换 + `Instrumentation` hook），见 §4 |
-| R3 | 配置路径修改，仍然改到宿主数据目录下 | 配置/日志/波形全部落到宿主自己的 `files` 目录，同进程直接 IO，删除 Remote 通道 |
-| R4 | 设置 activity 复用当前代码；配置页按宿主包名动态决定；宿主名作副标题显示在标题下方；标题可点击切换宿主，不实现跨宿主读写 | 复用 `HostSettingsScreen` 的内容组件；`packageName` 决定目标宿主；`TopAppBar(subtitle=…)` 或自定义顶栏；切换仅重定向目标，不迁移数据 |
-| R5 | 所有文字内容列表映射，便于统一修改与多语言 | 新建 `Texts.kt` 单点映射（枚举 + 中英双语），删除全部硬编码中文字面量；**不用** Android 资源（理由见 §4.9） |
-
-### 1.3 为什么不用 Android 资源做多语言（R5 的技术依据）
-
-设置页运行在**宿主进程**，`getResources()` 默认返回宿主资源，模块 APK 的 `strings.xml` / 主题不可直接使用（要接管资源需改 `attachBaseContext`，会连带主题、`setTheme` 的资源 id 校验一起出问题，风险远大于收益）。因此文案走 **Kotlin 常量表**：零资源依赖、可编译期检查、可加语言。这也正好是需求里"列表映射"的形态。
-
-例外：赞助二维码图片必须读模块资源，用 `packageManager.getResourcesForApplication(getModuleApplicationInfo())` 取（公开 API，见 §4.6）。
-
----
-
-## 2. 现状盘点与文件处置
-
-### 2.1 处置总表
-
-符号说明：**保留**=基本不动；**改造**=保留骨架改内部；**重写**=职责变化需新写；**删除**=移除文件。
-
-| 文件 | 处置 | 说明 |
-| --- | --- | --- |
-| `MainModule.kt` | 改造 | 保留触摸 Hook 与配置缓存装配；新增 Activity 注入 Hook；删除 Remote 读取、心跳文件、FAB 的 grant 逻辑 |
-| `HapticEngine.kt` | 改造 | 保留 `triggerHapticPreview` / `cachedSettings` / `cachedCustomHaptic`；`killHost` 保留；**继续禁止引用任何 `io.github.libxposed.*`** |
-| `HapticUtils.kt` | 保留 | 无改动 |
-| `RemoteConfig.kt` | 重写 | 只保留 `SettingsState` / `WaveformHaptic` / `CustomHapticConfig` / 默认值与波形校验/序列化；删除全部 prefs 键、group/file 名、revision 键、`HookStatus` |
-| `ConfigRepository.kt` | 重写 | 改名职责为"宿主目录文件仓库"：读/写/监听文件，产出 `SettingsSnapshot`；删除 `SyncState`/outbox/conflict |
-| `ConfigStore.kt` | 重写 | 变成 `HostPaths` + 原子写工具（临时文件 → fsync → rename） |
-| `RemoteService.kt` | 删除 | 不再连接 `XposedService` |
-| `SettingsActivity.kt` | **新增** | 运行在宿主进程的设置页（`ComponentActivity`，Compose 入口） |
-| `HostActivityInjector.kt` | **新增** | 负责 stub 选择、marker、`Instrumentation.newActivity` hook、启动 |
-| `HostCatalog.kt` | **新增** | 宿主包名/显示名/stub 表/版本查询（吸收 `RemoteConfig` 的宿主常量与 `HostInfo`） |
-| `HookRuntime.kt` | **新增** | 进程内运行状态（Hook 是否装好、模块版本、最近配置 revision、心跳时间），替代 `hook_status_*.json` |
-| `Texts.kt` | **新增** | 全量文案映射（中/英）与列表映射 |
-| `SettingsScreen.kt` | 改造 | `HostSettingsScreen` → `SettingsContent`；数据源换新仓库；顶栏换新；删"复制到其他宿主"；注入卡读 `HookRuntime` |
-| `WaveformEditor.kt` | 保留 | 除文案替换外不改逻辑 |
-| `WaveformCurve.kt` | 保留 | 除 `contentDescription` 文案外不改 |
-| `HostFabInjector.kt` | 改造 | 保留拖动/吸附/位置记忆；点击改为 `HostActivityInjector.launch(...)`；Toast 文案进 `Texts`；FAB 位置不再写 Remote，改写本地文件（见 §4.5） |
-| `HostInfo.kt` | 合并进 `HostCatalog` | 版本查询逻辑保留 |
-| `LogStore.kt` | 改造 | 路径改宿主目录；保留查看/清理/打包 |
-| `DebugLog.kt` | 重写 | 删除 Messenger/Service 绑定，直接在当前进程追加写文件（同进程，无需 IPC） |
-| `LogService.kt` | 删除 | 同进程不再需要跨进程日志服务 |
-| `DebugScreen.kt` | 改造 | `DebugDialog` 接入新页面的「调试与日志」二级页 |
-| `LegacyConfigImporter.kt` | 改造并接入 | 作为首次迁移的兜底来源（§4.4.3） |
-| `ConfigTransfer.kt` | 改造 | 由"全部宿主"改为"当前宿主"导入导出 |
-| `ModulePrefs.kt` | 删除 | 颜色模式并入宿主配置文件（per-host） |
-| `MainActivity.kt` | 删除 | R1 |
-| `App.kt` | 删除 | 无 NavHost；页面切换在 `SettingsActivity` 内用状态机完成 |
-| `MainScreen.kt` | 删除（内容迁移） | 「概览/宿主/设置」三页壳层不再需要；其中模块级设置内容迁移为 `ModuleSettingsPage`（新文件或并入 `SettingsScreen.kt`） |
-| `HostSettingsActivity.kt` | 删除 | 被宿主内 Activity 取代 |
-| `HostGrant.kt` | 删除 | 同进程启动，无跨进程凭证需求 |
-| `LiquidGlassBar.kt` / `liquid/` / `miuixanim/` | 删除 | 底栏取消，无引用；同时可移除 `miuix-blur` 依赖 |
-| `ui/theme/*` | 删除 | Material3 模板残留 |
-| `AndroidManifest.xml` | 改造 | 删除两个 Activity 与 `LogService`、`android:name` Application；保留 `VIBRATE` 与 `<queries>` |
-| `WeTypeHookRApp.kt` | 删除 | 只为 `RemoteService.init` 存在 |
-| `app/build.gradle.kts` | 改造 | 移除 `io.github.libxposed:service` / `interface`、`miuix-blur`、`navigation-compose`、`navigationevent-compose`、`coil`（若最终无引用） |
-
-> 删除前用 `grep -rn` 确认零引用；每阶段构建必须通过。
-
-### 2.2 关键现存行为（改造时必须保住）
-
-- Hooker 只读内存缓存、永远 `chain.proceed()`、不在输入路径做 IO。
-- `HapticEngine` 与 `RemoteConfig` 不得引用 Xposed 类型（`compileOnly` 导致 App/Hook 分层红线依然有效；虽然现在都在宿主进程，但 `MainModule` 仍只能在框架注入时存在）。
-- 波形 `timings[0] == 0`、段数 2–8、强度 0–255、至少一段 > 0ms 的校验。
-- 设置自动保存（滑杆防抖 250ms、离开页面补写）。
-- 弹层一律 miuix `Overlay*`，且必须位于某个 `Scaffold` 子树内。
-- FAB 只在两个白名单设置页注入，可拖动、贴边、位置按宿主记忆。
-
----
-
-## 3. 目标架构
+模块不再是"一个 App + 一个模块"，而是**只作为 Xposed 模块存在**：没有桌面入口，设置界面寄生在输入法进程里，由输入法设置页的浮动按钮唤起。
 
 ```
-┌──────────────── 宿主进程（com.tencent.wetype / com.bytedance.android.doubaoime）────────────────┐
-│                                                                                                │
-│  MainModule : XposedModule                                                                     │
-│    ├─ onPackageReady                                                                           │
-│    │    ├─ installTouchHooks()            # 原有                                    │
-│    │    ├─ ConfigRepository.attach(host)  # 读宿主目录文件 → HapticEngine 缓存 + FileObserver   │
-│    │    ├─ HookRuntime.markLoaded()       # 进程内状态                                          │
-│    │    └─ HostFabInjector.install(host)  # Activity.onResume hook，注入 FAB                    │
-│    │                                                                                           │
-│    ├─ SettingsActivity（真实类在模块 dex，被 newActivity 替换注入，运行于本进程）                │
-│    │    └─ Compose: SettingsContent(hostPackage)                                               │
-│    │         ├─ SettingsTopBar（标题 + 宿主副标题，可点 → 宿主选择）                            │
-│    │         ├─ 注入状态卡（读 HookRuntime）                                                    │
-│    │         ├─ 按下/抬起震动卡（复用现有组件）                                                  │
-│    │         ├─ 其他选项（恢复默认 / 重载输入法）                                                │
-│    │         └─ 二级页：波形编辑器 / 模块设置 / 调试与日志 / 帮助 / 关于                         │
-│    │                                                                                           │
-│    └─ HostActivityInjector                                                                     │
-│         ├─ Instrumentation.newActivity hook：识别 marker → 换成模块 ClassLoader + 目标类        │
-│         └─ launch(hostActivity)：startActivity(stub + marker + NEW_TASK|MULTIPLE_TASK)          │
-│                                                                                                │
-│  数据：<host files>/haostoo/{config/settings.json, config/haptic.json, logs/*.log, ui.json}     │
-└────────────────────────────────────────────────────────────────────────────────────────────────┘
+用户路径：
+输入法设置页 → 点击侧边 FAB
+            → 宿主进程内启动 SettingsActivity（模块类，运行在宿主）
+            → 顶栏显示「模块名 / 当前宿主名」，点标题区可切换宿主
+            → 改动即时写宿主配置目录，输入法立刻生效
 ```
 
-进程内只有一套状态：UI 与 Hook 共享 `HapticEngine.cachedSettings` 和同一批文件，**没有 IPC、没有 Remote、没有 outbox、没有心跳文件**。
+需求对照：
+
+| 编号 | 需求 | 落点 |
+| --- | --- | --- |
+| R1 | 移除设置应用（模块无 launcher Activity） | §3 入口只有 `HookEntry`；Manifest 无 `<activity>`、无 LAUNCHER |
+| R2 | 设置页改为在宿主内注册 Activity | §4 `registerModuleActivities()` + `ModuleActivity` |
+| R3 | 配置路径回到宿主数据目录 | §5 `HostPaths` + `SettingsStore` |
+| R4 | 复用现有设置 UI；标题下方显示宿主名；标题可点切换宿主 | §6 `SettingsContent` + `SettingsTopBar` |
+| R5 | 所有文案集中映射，便于统一修改与多语言 | §7 `strings.xml` + `values-en` + `string-array` |
 
 ---
 
-## 4. 关键技术方案
+## 2. 目标架构
 
-### 4.1 "在宿主里注册 Activity"的三种做法与选型
+```
+┌─────────────── 宿主进程（com.tencent.wetype / com.bytedance.android.doubaoime）───────────────┐
+│                                                                                              │
+│  HookEntry（@YukiHookLibXposedEntry，KSP 生成 META-INF/xposed）                                │
+│    └─ encase { loadApp(<host>) {                                                             │
+│           installTouchHooks()                  # 触摸 → 震动                                   │
+│           SettingsStore.attach(host)           # 读宿主配置 + FileObserver 热更新              │
+│           withApplicationReady { app ->                                                      │
+│               app.registerModuleActivities(<proxy>)   # 让模块 Activity 可在宿主启动           │
+│           }                                                                                  │
+│           HostFabInjector.install(this)        # 设置页注入 FAB                               │
+│       } }                                                                                    │
+│                                                                                              │
+│  SettingsActivity : BaseHostActivity（AppCompatActivity + ModuleActivity）                     │
+│    └─ Compose：SettingsContent(host)                                                          │
+│         ├─ SettingsTopBar（标题 + 宿主副标题，点击切换宿主）                                     │
+│         ├─ 注入状态卡（进程内状态）                                                             │
+│         ├─ 按下 / 抬起震动卡、波形编辑器（复用现有组件）                                          │
+│         └─ 二级页：模块设置 / 调试与日志 / 帮助 / 关于                                           │
+│                                                                                              │
+│  数据：<host>/files/haostoo/{config/settings.json, config/haptic.json, config/ui.json, logs/}  │
+└──────────────────────────────────────────────────────────────────────────────────────────────┘
+```
 
-Android 不允许运行时把组件真正登记进别的 APK 的 `PackageManager`（system_server 解析必然失败）。可行路径只有三条：
+进程内只有一套状态：UI 与 Hook 共享同一批文件与同一个内存缓存，没有 IPC、没有跨进程配置通道、没有启动凭证。
 
-| 方案 | 原理 | 结论 |
-| --- | --- | --- |
-| A. 包名校验 + 模块自己的 exported Activity | 现状（1.3.0）：Activity 属于模块包，跑在模块进程 | 不满足 R2/R3（跨进程，写不到宿主目录） |
-| **B. stub 替换 + `Instrumentation.newActivity` 换类** | 客户端用宿主已声明的 Activity 骗过 system_server，在真正实例化前把"类加载器 + 类名"换成本模块的 Activity | **选定**。不需要 dex 注入、不需要 hidden API、不需要改 system_server |
-| C. 反射 `BaseDexClassLoader.pathList.addDexPath` 注入 dex 后伪造 `ActivityInfo` | 需改 `ActivityInfo` 且 system_server 仍不认；`pathList` 属 hidden API | 放弃：hidden API 限制 + 版本脆弱 |
+---
 
-方案 B 的关键事实（决定了它为什么安全）：
+## 3. 依赖与入口
 
-1. `ActivityThread.performLaunchActivity` 通过 `mInstrumentation.newActivity(cl, className, intent)` 实例化，`cl` 是宿主 `LoadedApk` 的 ClassLoader。
-2. `Instrumentation.newActivity` 的签名 `(ClassLoader, String, Intent)` **从 API 1 至今未变**，且是 public —— 可以稳定 hook。
-3. `XposedInterface.Chain` 支持 `proceed(Object[])` 替换参数，因此可以把 `cl` 换成**模块 ClassLoader**、把 `className` 换成模块 Activity 类名。
-4. 实例化完成后，`ActivityThread` 用**宿主的** `ActivityClientRecord`、`Application`、`ActivityInfo` 去 `attach`，所以该 Activity 的 `Context`、`packageName`、`filesDir`、`getSystemService` 全是**宿主的** —— 正好满足 R2/R3。
-5. 因为不动 `activityInfo`，宿主资源与主题仍然有效，不会出现资源 id 跨包崩溃。
-
-### 4.2 注入实现（`HostActivityInjector.kt`）
+### 3.1 依赖
 
 ```kotlin
-object HostActivityInjector {
-    const val EXTRA_MARK = "com.haostoo.wetypehookr.extra.HOST_SETTINGS_MARK"
+// 框架 API：只在宿主进程存在，绝不能打包
+compileOnly("io.github.libxposed:api:102.0.0")
 
-    /** P0 期填空，真机 dumpsys 后写入（每宿主可多个候选，按顺序尝试）。 */
-    private val STUBS = mapOf(
-        HostCatalog.WETYPE to listOf(/* "com.tencent.wetype.....XxxActivity" */),
-        HostCatalog.DOUBAO to listOf(/* "com.bytedance.android.doubaoime.....XxxActivity" */),
-    )
+// YukiHook：core + libxposed 底座 + 编译器
+implementation("com.highcapable.yukihookapi:yukihook-core:1.5.0")
+implementation("com.highcapable.yukihookapi:yukihook-runtime-libxposed:1.5.0")
+ksp("com.highcapable.yukihookapi:yukihook-compiler:1.5.0")
 
-    private var moduleLoader: ClassLoader? = null
+// ModuleActivity 需要 AppCompat（core 已传递，显式声明锁定版本）
+implementation("androidx.appcompat:appcompat:1.7.1")
+```
 
-    /** 在 onPackageReady 中调用一次。 */
-    fun install(host: String, loader: ClassLoader, xposed: XposedInterface) {
-        moduleLoader = SettingsActivity::class.java.classLoader
-        runCatching {
-            val m = Instrumentation::class.java.getDeclaredMethod(
-                "newActivity", ClassLoader::class.java, String::class.java, Intent::class.java,
-            )
-            xposed.hook(m).intercept(object : XposedInterface.Hooker {
-                override fun intercept(chain: XposedInterface.Chain): Any? {
-                    val intent = chain.args.getOrNull(2) as? Intent
-                    if (intent == null || !intent.getBooleanExtra(EXTRA_MARK, false)) {
-                        return chain.proceed()
-                    }
-                    val cl = moduleLoader ?: return chain.proceed()
-                    return chain.proceed(
-                        arrayOf(cl, SettingsActivity::class.java.name, intent),
-                    )
+- 在 `app/build.gradle.kts` 应用 KSP 插件（根项目 `plugins { id("com.google.devtools.ksp") version "<ksp>" apply false }`）。
+- 移除不再使用的依赖：`io.github.libxposed:service`、`io.github.libxposed:interface`、`miuix-blur`、`navigation-compose`、`navigationevent-compose`、`coil-compose`（逐个 `grep` 确认零引用后再删）。
+- 保留：`miuix-ui`、`miuix-preference`、`miuix-icons`、`compose-bom`、`material3`、`compose-markdown`。
+- 传递依赖会带来 `kotlin-stdlib 2.4.21`，与本项目 Kotlin 2.4.10 同属 2.4 线，Gradle 取高版本即可；若编译报元数据版本错误，先升 Kotlin 到 2.4.21 再排查。
+
+### 3.2 资源包 ID（必须改）
+
+模块资源要注入宿主，必须与宿主资源 ID 隔离：
+
+```kotlin
+android {
+    androidResources.additionalParameters +=
+        listOf("--allow-reserved-package-id", "--package-id", "0x64")
+}
+```
+
+- 不要用 `0x7f`（宿主默认段）。
+- 若同一宿主已装其他模块占用 `0x64`，改 `0x65`–`0x7e` 中未占用值；改完在两个宿主上重新验证资源显示。
+
+### 3.3 入口类
+
+```kotlin
+@YukiHookLibXposedEntry(
+    targetApiVersion = 102,
+    scope = ["com.tencent.wetype", "com.bytedance.android.doubaoime"],
+    staticScope = true,
+    hotReload = YukiHookLibXposedEntry.HotReload.NONE,
+)
+object HookEntry : YukiHookXposedModule {
+
+    override fun onHook() = encase {
+        HostCatalog.ALL.forEach { host ->
+            loadApp(host) {
+                installTouchHooks()
+                SettingsStore.attach(appContext, host)
+                withApplicationReady { app ->
+                    app.registerModuleActivities(HostCatalog.proxyFor(host))
                 }
-            })
-        }.onFailure { Log.e(TAG, "newActivity hook failed", it) }
-    }
-
-    /** 由 FAB 点击调用。 */
-    fun launch(from: Activity, host: String): Boolean {
-        val stub = pickStub(from, host) ?: return false
-        val i = Intent().setClassName(host, stub)
-            .putExtra(EXTRA_MARK, true)
-            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_MULTIPLE_TASK)
-        return runCatching { from.startActivity(i); true }.getOrDefault(false)
+                HostFabInjector.install(this)          // fun PackageParam.install()
+            }
+        }
     }
 }
 ```
 
-**四个必须遵守的细节**
+要点：
 
-1. **marker 判断要极快**：`newActivity` 每次创建 Activity 都会进 hook，先判 extra 再判类名，不要做字符串拼接/反射。
-2. **只替换自己的类**：不要顺手改别的 intent，宿主自己的 Activity 必须原样放行。
-3. **`FLAG_ACTIVITY_MULTIPLE_TASK` 不能省**：stub 若被宿主声明为 `singleTask`/`singleTop`，不加此 flag 会走 `onNewIntent`，`newActivity` 根本不会执行，表现为"点了没反应"。
-4. **失败要可见**：`launch` 返回 false 或 500ms 内 `SettingsActivity.onCreate` 未置位时，Toast 提示（`Texts.ToastInjectFailed`），不要静默。
-5. **宿主可能自定义 `Instrumentation`**：先取 `ActivityThread.currentActivityThread().mInstrumentation.javaClass`，若不是 `android.app.Instrumentation` 本身，则对该实现类的 `newActivity` 再 hook 一次（子类覆写会绕过基类 hook）。两边都装，重复替换无副作用（marker 判断天然幂等）。
-6. **不要用 `intent.component` 判断宿主**：替换后 intent 里仍是 stub 组件名；宿主身份一律用 `context.packageName`。
+- `encase` / `loadApp` / `withApplicationReady` 由 `yukihook-core` 提供（`com.highcapable.yukihookapi.hook.factory.*`、`hook.param.PackageParam`）。
+- **必须删除** `app/src/main/resources/META-INF/xposed/` 下三个手写文件（`module.prop`、`java_init.list`、`scope.list`）；编译器会根据注解生成它们。源码里同时存在手写文件会直接编译失败。
+- 模块名称/描述改由 Manifest 提供：`<application android:label="@string/app_name" android:description="@string/module_description">`。
+- `hotReload = NONE`：设置页常驻时热重载会被拒（框架要求模块 Activity 先销毁），本项目不启用。
+- 触摸 Hook 用 YukiHook DSL 重写：
 
-**stub 选择标准（P0 必须真机确认，写入 `HostCatalog`）**
+```kotlin
+private fun PackageParam.installTouchHooks() {
+    val host = packageName
+    val (className, methodName) = if (host == HostCatalog.WETYPE)
+        "com.tencent.wetype.plugin.hld.view.ImeRootView" to "dispatchTouchEvent"
+    else
+        "com.bytedance.android.input.keyboard.KeyboardView" to "onTouchEvent"
 
-- 属于宿主自己的包（`packageName` 相同），`enabled=true`；
-- `launchMode` 为 `standard`（**不要** `singleTask` / `singleInstance` / `singleTop`）；
-- 主题无 ActionBar、非透明、非 `Dialog` 主题；
-- 启动本身无副作用（不要选会发网络请求、会清理数据、会弹登录的页面）。
+    runCatching {
+        className.toClass()
+            .method { name = methodName; param(MotionEvent::class) }
+            .hook {
+                before {
+                    val view = instance as? View ?: return@before
+                    val event = args[0] as? MotionEvent ?: return@before
+                    HapticEngine.dispatch(view, event)
+                }
+            }
+    }.onFailure { Log.w("WETYPE_HOOK", "hook install failed: $host", it) }
+}
+```
+
+- 具体 DSL 名称（`toClass` / `method` / `hook` / `before`）以 1.5.0 实际 API 为准；若与示例不符，用 IDE 补全修正，**不要**改回框架原生 `hook()`。
+- Hook 内容仍然只读内存缓存、只做副作用，不改参数、不吞结果。
+
+---
+
+## 4. 宿主内设置 Activity
+
+### 4.1 注册
+
+```kotlin
+withApplicationReady { application ->
+    application.registerModuleActivities(HostCatalog.proxyFor(host))
+}
+```
+
+- `registerModuleActivities(proxyClassName)` 的作用：让**未在宿主 Manifest 声明**的模块 Activity 可以在宿主进程里被启动。
+- 框架负责 Intent 转换与启动期替换：调用方只需 `startActivity`，不感知 proxy 的存在，也不需要额外的 flag 或约定参数。
+- 必须在宿主 `Application` 就绪之后调用（`withApplicationReady`）。
+
+### 4.2 proxy 选择
+
+`proxy` 必须是**宿主 Manifest 里真实存在**的 Activity，建议直接用两个设置页：
+
+| 宿主 | proxy 候选 |
+| --- | --- |
+| `com.tencent.wetype` | `com.tencent.wetype.plugin.hld.reactnative.activity.ImeMainSettingActivity` |
+| `com.bytedance.android.doubaoime` | `com.bytedance.android.doubaoime.activity.SettingsActivityNext` |
+
+选择标准（P0 必须真机确认）：
+
+- `launchMode` 为 `standard`（若是 `singleTask`/`singleInstance`，二次打开可能只触发 `onNewIntent`）；
+- 主题无 ActionBar、非透明；
+- 启动本身无副作用。
 
 查询命令：
 
@@ -246,19 +223,78 @@ adb shell dumpsys package com.tencent.wetype | sed -n '/Activities:/,/Providers:
 adb shell dumpsys package com.bytedance.android.doubaoime | sed -n '/Activities:/,/Providers:/p'
 ```
 
-`dumpsys` 里每个 `<activity>` 段会标 `launchMode`。把候选记入 `HostCatalog.STUBS`，并在 `pickStub` 里做运行时校验（`pm.getActivityInfo(ComponentName(host, name), 0)`，检查 `enabled` 与 `launchMode`，不可用就试下一个）。
+候选不满足时，在 `HostCatalog` 里换成其它 `standard` 的宿主 Activity，并在 `HOST_NOTES.md` 记录版本与实测结果。
 
-### 4.3 窗口、主题与返回
+### 4.3 Activity 基类
 
-- Activity 的 `packageName` = 宿主；`getWindow()` 的主题来自 stub 的 `activityInfo.theme`，通常是宿主设置页的 NoActionBar 主题，可直接用。
-- 在 `onCreate` 里（`setContent` 之前）做一次保险：`runCatching { requestWindowFeature(Window.FEATURE_NO_TITLE) }`，并 `window.setBackgroundDrawable(ColorDrawable(surfaceColor))`，避免宿主主题底色透出。
-- `enableEdgeToEdge()` 可用（`androidx.activity` 在模块 dex 中）；底栏留白沿用 `navigationBars` 内边距。
-- 关闭：`finish()`（顶栏返回按钮 + 系统返回键），回到宿主原设置页。**不要**用 `overridePendingTransition` 自定义动画，保持与宿主一致。
-- 任务栈：因 `NEW_TASK|MULTIPLE_TASK`，会多一条 task 记录，`Recent` 中显示为输入法本身——可接受，写入文档即可。
+```kotlin
+abstract class BaseHostActivity : AppCompatActivity(), ModuleActivity {
 
-### 4.4 配置存储（R3）
+    override val moduleTheme get() = R.style.Theme_WeTypeHookR
 
-#### 4.4.1 路径
+    override fun getClassLoader() = delegate.getClassLoader()
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        delegate.onCreate(savedInstanceState)
+        super.onCreate(savedInstanceState)
+    }
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        delegate.onConfigurationChanged(newConfig)
+        super.onConfigurationChanged(newConfig)
+    }
+
+    override fun onRestoreInstanceState(savedInstanceState: Bundle) {
+        delegate.onRestoreInstanceState(savedInstanceState)
+        super.onRestoreInstanceState(savedInstanceState)
+    }
+}
+
+class SettingsActivity : BaseHostActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        enableEdgeToEdge()
+        setContent { SettingsApp() }
+    }
+}
+```
+
+约定：
+
+- 三个生命周期方法与 `getClassLoader()` 的委托**不能省**：它们负责主题、资源配置变化、`savedInstanceState` 的类加载器。
+- `moduleTheme` 必须是 AppCompat 主题（见 §4.4）；返回 `-1` 会退回宿主主题，导致 AppCompat 组件异常。
+- 宿主的 `packageName` 就是目标宿主：`val host = packageName`，不要从 Intent extra 取。
+- `finish()` 即返回输入法设置页，不要自定义转场动画。
+
+### 4.4 主题
+
+`res/values/themes.xml`：
+
+```xml
+<style name="Theme.WeTypeHookR" parent="Theme.AppCompat.DayNight.NoActionBar">
+    <item name="android:windowBackground">@android:color/transparent</item>
+</style>
+```
+
+- 页面视觉仍由 `MiuixTheme(colors = ...)` 决定，XML 主题只提供窗口基础（无 ActionBar、无标题）。
+- 深浅色由 `ui.json` 的 `color_mode` 驱动 Compose 配色，不依赖 `DayNight`。
+
+### 4.5 启动
+
+```kotlin
+// HostFabInjector 的点击回调
+context.startActivity(Intent(context, SettingsActivity::class.java))
+```
+
+- 不需要 `FLAG_ACTIVITY_NEW_TASK`（从 Activity 启动）。
+- 目标类必须是 `ModuleActivity` 子类，否则不会被注册机制接管。
+- 启动失败（异常或 500ms 内 `SettingsActivity.onCreate` 未置位）时 Toast 提示，文案见 §7 `toast_open_settings_failed`。
+
+---
+
+## 5. 配置与日志
+
+### 5.1 路径
 
 ```kotlin
 object HostPaths {
@@ -266,17 +302,16 @@ object HostPaths {
     fun root(ctx: Context): File =
         File(ctx.getExternalFilesDir(null) ?: ctx.filesDir, ROOT).apply { mkdirs() }
     fun configDir(ctx: Context) = File(root(ctx), "config").apply { mkdirs() }
-    fun settingsFile(ctx: Context) = File(configDir(ctx), "settings.json")
-    fun hapticFile(ctx: Context) = File(configDir(ctx), "haptic.json")
-    fun uiFile(ctx: Context) = File(configDir(ctx), "ui.json")     // FAB 位置、颜色模式
-    fun logsDir(ctx: Context) = File(root(ctx), "logs").apply { mkdirs() }
+    fun settings(ctx: Context) = File(configDir(ctx), "settings.json")
+    fun haptic(ctx: Context) = File(configDir(ctx), "haptic.json")
+    fun ui(ctx: Context) = File(configDir(ctx), "ui.json")
+    fun logs(ctx: Context) = File(root(ctx), "logs").apply { mkdirs() }
 }
 ```
 
-- 默认落在 `getExternalFilesDir(null)`（即 `/sdcard/Android/data/<host>/files/haostoo/…`），与 1.2.x 行为一致，便于用户备份/排障；为 null 时回退 `filesDir`。
-- 全部路径只允许从 `HostPaths` 取，禁止在别处拼字符串。
+最终位置：`/sdcard/Android/data/<host>/files/haostoo/…`；外部存储不可用时回退 `filesDir`。
 
-#### 4.4.2 文件格式与写入
+### 5.2 格式
 
 `settings.json`：
 
@@ -288,106 +323,129 @@ object HostPaths {
  "theme_mode": 2, "debug_log": false}
 ```
 
-`haptic.json`：沿用现有 `{"down":{"timings":[…],"amplitudes":[…]}, "up":{…}}` 结构。
+`haptic.json`：`{"down":{"timings":[…],"amplitudes":[…]}, "up":{…}}`（沿用现有结构与校验规则：段数 2–8、`timings[0]==0`、时长 ≤500ms、强度 0–255、至少一段 >0ms）。
 
-写入规则（沿用 `ConfigStore.writeAtomic`）：
+`ui.json`：`{"fab_x":0.0,"fab_y":0.62,"color_mode":2}`。
+
+### 5.3 写入
 
 1. 写 `xxx.json.tmp`；
 2. `FileOutputStream(tmp, true).use { it.fd.sync() }`；
 3. 删旧文件 → `renameTo`（失败则 `copyTo` 后删临时文件）；
-4. 先写 `haptic.json` 再写 `settings.json`（settings 里的 `revision` 是这次逻辑提交的标记）。
+4. 先写 `haptic.json`，再写 `settings.json`（后者携带 `revision`）。
 
-`revision` 用 `System.currentTimeMillis()`，`max(settings.revision, haptic mtime)` 作为整体版本，避免"设置变了但 revision 没变"。
+`revision = System.currentTimeMillis()`；整体版本取 `max(settings.revision, haptic.mtime)`。
 
-#### 4.4.3 旧配置迁移（一次）
+### 5.4 热更新
 
-首次启动（`settings.json` 不存在）时按顺序尝试：
+`SettingsStore` 在 Hook 侧对 `configDir` 挂 `FileObserver(CLOSE_WRITE or MOVED_TO)`：
 
-1. `LegacyConfigImporter` 读 `<host>/files/haostoo/config/config.xml`（1.2.x 位置，外部目录同一路径）；
-2. 仍无 → 尝试从 LibXposed Remote Preferences 读一次（`getRemotePreferences("wetype_settings"/"doubao_settings")`，能力检测 `PROP_CAP_REMOTE`，包 `runCatching`）——为 1.3.0 用户保留配置；
-3. 仍无 → `RemoteConfig.defaultSettings()`。
+- 200ms 去抖；
+- `revision` 变化才重读；
+- 重读成功后原子替换 `HapticEngine.cachedSettings` / `cachedCustomHaptic`；
+- 解析失败保留上一份有效缓存并 `Log.w`；
+- `FileObserver` 用字段强引用持有。
 
-迁移成功后写新文件，**此后不再读 Remote**；Remote 相关代码在 P5 阶段整体删除（P1 阶段先保留读取能力）。
+UI 保存后**不要**直接改内存缓存，等文件监听生效（延迟 < 300ms），保证"文件是唯一权威源"。
 
-#### 4.4.4 热更新（Hook 侧）
+### 5.5 首次迁移
 
-`ConfigRepository` 在 Hook 进程侧挂 `FileObserver(configDir, CLOSE_WRITE or MOVED_TO)`：
+`settings.json` 不存在时，按顺序取一次初始值并落盘：
 
-- 收到事件后 200ms 去抖，对比 `revision`，变化则重读 `settings.json` + `haptic.json`，原子替换 `HapticEngine.cachedSettings` / `cachedCustomHaptic`；
-- 解析失败保留上一个有效缓存并 `Log.w`；
-- `FileObserver` 引用必须用字段强引用持有，避免被 GC。
+1. 旧位置 `config/config.xml`（若存在，用 `LegacyConfigImporter` 解析）；
+2. 默认值（`SettingsModel.defaultSettings()`）。
 
-UI 侧保存后不需要通知 Hook —— 同进程 + 文件监听即可，**不要在 UI 里直接改 `HapticEngine.cachedSettings`**（会让"文件才是权威源"这条契约失效；测试时可接受 200ms 延迟）。
+迁移只发生一次，之后不再读取任何其他来源。
 
-### 4.5 FAB 与 UI 偏好
+### 5.6 日志
 
-- FAB 位置（`fab_x`/`fab_y`）与颜色模式不再写 Remote Preferences，改写 `ui.json`（`HostPaths.uiFile`），字段：`{"fab_x":0.0,"fab_y":0.62,"color_mode":2}`。
-- `ModulePrefs` 删除；`color_mode` 变成 per-host（跟 `ui.json` 走）。这是行为变化，需在 README 更新日志里说明。
-- FAB 仍在白名单设置页注入，逻辑不变；只把点击改成 `HostActivityInjector.launch(activity, host)`，失败时 Toast。
+同进程，直接写文件：
 
-### 4.6 资源边界（唯一需要模块资源的地方）
-
-赞助二维码：`R.drawable.sponsor` 是模块资源。在宿主进程取法：
-
-```kotlin
-val appInfo = moduleAppInfo            // MainModule 里 XposedInterface.getModuleApplicationInfo() 缓存到静态字段
-val res = context.packageManager.getResourcesForApplication(appInfo)
-val bmp = BitmapFactory.decodeStream(res.openRawResource(R.drawable.sponsor))
-Image(bitmap = bmp.asImageBitmap(), contentDescription = null)
+```
+<host>/files/haostoo/logs/{hardware,vibrate,ui}.log
 ```
 
-- 不要在宿主进程调用 `createPackageContext(MODULE_PKG, …)`：宿主没有对模块包的 `<queries>`，Android 11+ 会抛 `NameNotFoundException`。
-- 除这张图，页面**不得**再引用任何 `R.string/R.style/R.dimen`。
-- `HostFabInjector` 的 FAB 是 Canvas 纯绘制，无资源依赖，保持现状。
+- `debug_log=false` 时不写；开启后每次震动写一行（模式、时长、强度）。
+- 单文件超过 512KB 时轮转为 `.1`，最多保留两份。
+- 写盘放单线程队列，异常只 `Log.w`，绝不影响输入法。
 
-### 4.7 顶栏：标题 + 宿主副标题（可点击）— R4 的落地点
+---
 
-**先确认事实**（已对照 `miuix-ui-0.9.3` 与官方属性表）：
+## 6. 页面结构
 
-- `TopAppBar(title: String, subtitle: String = "", largeTitle: String = title, …)` **支持副标题**，官方描述为"显示在标题栏下方的副标题文本"。
-- 但 `title` 的类型是 `String`，**无法挂点击事件**；`navigationIcon` / `actions` 才是 slot。
-
-因此按下面二选一实现，**默认 T1**：
-
-| 方案 | 做法 | 取舍 |
-| --- | --- | --- |
-| **T1（选定）** | 自写 `SettingsTopBar`：`Surface` + `Row(返回按钮 + 可点击 Column(主标题 / 副标题 + 指示箭头))`，标题区整体 `clickable` | 完全满足"点标题/副标题切换宿主"；放弃 miuix 的折叠大标题行为（设置页不需要） |
-| T2（保底） | 直接用 `TopAppBar(title = 模块标题, subtitle = 宿主名)`，切换入口放 `actions` 的 `IconButton` | 视觉最"原生"，但不符合"点标题"的字面需求 |
-
-T1 骨架（放在 `SettingsActivity.kt` 或独立 `SettingsTopBar.kt`）：
+### 6.1 骨架
 
 ```kotlin
 @Composable
-fun SettingsTopBar(
-    hostName: String,
-    onBack: (() -> Unit)?,
-    onSwitchHost: () -> Unit,
-    scrollBehavior: ScrollBehavior? = null,
-) {
+fun SettingsApp() {
+    val context = LocalContext.current
+    val host = context.packageName                      // 运行在宿主进程，天然是宿主
+    var targetHost by remember { mutableStateOf(host) }
+    var showHostPicker by remember { mutableStateOf(false) }
+    val dark = ModulePrefs.isDark(context, isSystemInDarkTheme())
+
+    MiuixTheme(colors = if (dark) darkColorScheme() else lightColorScheme()) {
+        Scaffold(topBar = {
+            SettingsTopBar(
+                hostName = HostCatalog.displayName(targetHost),
+                onBack = null,
+                onSwitchHost = { showHostPicker = true },
+            )
+        }) { padding ->
+            SettingsContent(
+                host = targetHost,
+                modifier = Modifier.padding(top = padding.calculateTopPadding()),
+            )
+        }
+        if (showHostPicker) HostPickerDialog(
+            current = targetHost,
+            onDismiss = { showHostPicker = false },
+            onSelect = { targetHost = it; showHostPicker = false },
+        )
+    }
+}
+```
+
+### 6.2 顶栏（标题 + 宿主副标题 + 可点击）
+
+miuix 的 `TopAppBar` 有 `subtitle` 参数，但 `title` 是 `String`，挂不了点击；因此自写 `SettingsTopBar`：
+
+```kotlin
+@Composable
+fun SettingsTopBar(hostName: String, onBack: (() -> Unit)?, onSwitchHost: () -> Unit) {
     Surface(color = MiuixTheme.colorScheme.surface) {
         Row(
             Modifier.fillMaxWidth().statusBarsPadding().height(56.dp).padding(horizontal = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             if (onBack != null) {
-                IconButton(onClick = onBack) { Icon(MiuixIcons.Back, Str.Back.s()) }
+                IconButton(onClick = onBack) {
+                    Icon(MiuixIcons.Back, stringResource(R.string.action_back))
+                }
             }
             Column(
-                Modifier
-                    .weight(1f)
-                    .clip(RoundedCornerShape(8.dp))
-                    .clickable(role = Role.Button, onClickLabel = Str.SwitchHost.s()) { onSwitchHost() }
+                Modifier.weight(1f).clip(RoundedCornerShape(8.dp))
+                    .clickable(role = Role.Button) { onSwitchHost() }
                     .padding(horizontal = 8.dp, vertical = 4.dp),
             ) {
-                Text(Str.AppTitle.s(), style = MiuixTheme.textStyles.headline2,
-                     maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(
+                    stringResource(R.string.app_name),
+                    style = MiuixTheme.textStyles.headline2,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis,
+                )
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(hostName, style = MiuixTheme.textStyles.footnote1,
-                         color = MiuixTheme.colorScheme.onSurfaceContainerVariant,
-                         maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Icon(MiuixIcons.ArrowUpDown, Str.SwitchHost.s(),
-                         modifier = Modifier.padding(start = 2.dp).size(12.dp),
-                         tint = MiuixTheme.colorScheme.onSurfaceContainerVariant)
+                    Text(
+                        hostName,
+                        style = MiuixTheme.textStyles.footnote1,
+                        color = MiuixTheme.colorScheme.onSurfaceContainerVariant,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    )
+                    Icon(
+                        MiuixIcons.ArrowUpDown,
+                        stringResource(R.string.action_switch_host),
+                        modifier = Modifier.padding(start = 2.dp).size(12.dp),
+                        tint = MiuixTheme.colorScheme.onSurfaceContainerVariant,
+                    )
                 }
             }
         }
@@ -395,484 +453,377 @@ fun SettingsTopBar(
 }
 ```
 
-注意：
+- `MiuixIcons.ArrowUpDown` 若不存在，改用 `MiuixIcons.Tune`（以 IDE 补全为准）。
+- 二级页（波形编辑、模块设置）传 `onBack`，一级页传 `null` 并补 `padding(start = 16.dp)`。
+- 顶栏高度 56dp，内容区必须消费 `padding.calculateTopPadding()`。
 
-- `MiuixIcons.ArrowUpDown` 若在 0.9.3 不存在（先用 IDE 补全确认，不要猜），改用 `MiuixIcons.Tune`。
-- 返回按钮只在二级页（波形编辑 / 模块设置）显示；一级页 `onBack = null`，此时标题区补 `padding(start = 16.dp)`。
-- 文案不许写字面量，用 §9 的 `Str`。
-- 内容区顶部要留出顶栏高度（`Scaffold(topBar = { SettingsTopBar(...) })` 并消费 `padding.calculateTopPadding()`），否则首张卡片被压住。
+### 6.3 宿主切换
 
-### 4.8 宿主识别与手动切换（R4）
+- 点标题区 → `OverlayDialog` 列出两个宿主，当前项打钩。
+- 选择后只切换 `targetHost`，页面重新读取该宿主目录：
+  - 可读 → 正常展示与保存；
+  - 不可读（不同应用数据目录不可互访 / 目录不存在）→ 只读态，显示 `host_no_access_hint`，禁用保存；
+- 不做任何跨宿主数据复制或迁移。
 
-**自动识别**：`SettingsActivity` 运行在宿主进程，直接用 `packageName`：
+### 6.4 内容
 
-```kotlin
-val autoHost = context.packageName            // 一定是宿主
-val target = if (autoHost in HostCatalog.ALL) autoHost else HostCatalog.WETYPE
-```
+沿用现有卡片结构，只换数据源：
 
-**手动切换**（备选方案，不实现跨宿主读写）：
+1. 注入状态卡（进程内状态：Hook 是否装好、模块版本、当前 revision、最近心跳时间）；
+2. 按下震动卡：模式下拉 → 系统风格下拉 / 时长强度滑杆 / 曲线预览 + 「设置波形」 → 测试；
+3. 抬起震动卡：同上；
+4. 其他选项：恢复默认、重载输入法；
+5. 二级页：波形编辑器、模块设置（颜色模式、导入导出）、调试与日志、帮助、关于。
 
-- 顶栏标题/副标题整体可点击 → `OverlayDialog` 列出两个宿主，当前项打勾；
-- 选中另一个宿主后：把页面 `targetHost` 改成它，尝试读取**该宿主**的配置目录：
-  - 可读（同 UID / 共享 UID 场景）→ 正常展示与保存；
-  - 不可读（`File.canRead()==false` 或目录不存在，不同 UID 的常见情况）→ 页面进入只读态，显示一条说明（`Texts.HostSwitchNoAccess`），保存按钮禁用；
-- **不复制、不迁移**任何数据；原「复制到其他宿主」功能删除。
+### 6.5 miuix 约束（不可违反）
 
-这条实现既满足"点击标题换宿主"的交互，也不假装能做跨 UID 读写。
-
-### 4.9 文案映射（R5）
-
-新建 `Texts.kt`，形态为枚举 + 中英双语，供 `Str.xxx` / `StrList.xxx` 直接取用：
-
-```kotlin
-enum class Str(val zh: String, val en: String) {
-    AppTitle("震动设置", "Vibration"),
-    DownVibration("按下震动", "Press vibration"),
-    ...
-    ;
-    fun s(vararg args: Any?): String = String.format(pick(), *args)
-    private fun pick() = if (Locale.getDefault().language.startsWith("zh")) zh else en
-}
-
-enum class StrList(val zh: List<String>, val en: List<String>) {
-    Modes(listOf("无震动", "系统预设风格", "简单自定义", "自定义波形"),
-          listOf("Off", "System preset", "Simple custom", "Custom waveform")),
-    SystemHaptics(listOf("Virtual Key", ...), listOf("Virtual Key", ...)),
-    ColorModes(listOf("浅色", "深色", "跟随系统"), listOf("Light", "Dark", "Follow system")),
-    ;
-    fun items(): List<String> = if (Locale.getDefault().language.startsWith("zh")) zh else en
-}
-```
-
-- 参数化文案统一用 `%s` / `%d`（**不要**用 Kotlin 字符串模板传参，否则无法复用/翻译）。
-- 列表（模式名、系统风格名、颜色模式名）走 `StrList`，页面里 `StrList.Modes.items()`。
-- 严禁在 Compose 里出现中文字面量；`grep -nP '"[^"]*[\x{4e00}-\x{9fff}]' app/src/main/java` 结果只允许命中 `Texts.kt`。
-- 系统的 `SYSTEM_HAPTICS` 20 个名字是 Android 常量名，中英相同，仍入表以便统一调整。
-- 全量 key 清单见 §9。
+- 一个页面一个 `Scaffold`；所有 `Overlay*` 必须在其子树内，否则弹层不出。
+- 弹层只用 miuix `OverlayDialog` / `OverlayBottomSheet`，禁止 `androidx.compose.ui.window.Dialog`。
+- 设置项用 `ArrowPreference` / `SwitchPreference` / `OverlayDropdownPreference`，不要裸 `Button`。
+- 图标用 `MiuixIcons.*`，颜色用 `MiuixTheme.colorScheme.*`，文本用 `MiuixTheme.textStyles.*`。
+- 内容底部留白避让导航栏；`enableEdgeToEdge()` 已在 Activity 中调用。
 
 ---
 
-## 5. 实施阶段与验证闸门
+## 7. 文案（资源化）
 
-> 每个阶段的"闸门"不通过就停下报告。**P0 是全任务最大风险点，先做它。**
+### 7.1 规则
 
-### P0 — 可行性验证（不改任何现有功能）
+- 全部字符串放 `res/values/strings.xml`（中文）与 `res/values-en/strings.xml`（英文）。
+- 列表放 `res/values/arrays.xml` 的 `<string-array>`。
+- Compose 用 `stringResource(R.string.xxx)`；带参用 `stringResource(R.string.xxx, arg)`，占位符写 `%1$s` / `%1$d`。
+- 源码（`.kt`）中不得出现中文字面量（注释、日志 tag 除外）。
+- 命名：`动作_对象`（`action_back`）、`标题_页面`（`title_injection`）、`toast_结果`（`toast_saved`）、`error_原因`（`error_range`）。
 
-**目标**：用最小代价证明"能在宿主进程里跑起一个 Activity 并写宿主目录"。
+### 7.2 必建资源清单
 
-1. 新增 `SettingsActivity`，内容只有一个 `TextView`：`"host=" + packageName + " pid=" + Process.myPid() + " filesDir=" + filesDir`。
-2. 新增 `HostActivityInjector`（§4.2 骨架）+ `HostCatalog.STUBS`。
-3. `HostFabInjector` 的点击改为 `HostActivityInjector.launch(...)`。
-4. `MainModule.onPackageReady` 调用 `HostActivityInjector.install(...)`。
-5. **暂不删除** `MainActivity`/`MainScreen`，保证随时能回退。
+| 资源名 | 中文 | EN |
+| --- | --- | --- |
+| `app_name` | 震动设置 | Vibration |
+| `module_description` | 为微信输入法 / 豆包输入法提供可自定义的双段触感反馈 | Custom two-stage haptic feedback for WeType and Doubao IME |
+| `action_back` | 返回 | Back |
+| `action_cancel` | 取消 | Cancel |
+| `action_confirm` | 确认 | OK |
+| `action_save` | 保存 | Save |
+| `action_close` | 关闭 | Close |
+| `action_switch_host` | 切换宿主 | Switch host |
+| `action_reset_default` | 恢复默认配置 | Restore defaults |
+| `action_reload_ime` | 重载输入法 | Reload IME |
+| `action_export_config` | 导出配置 | Export config |
+| `action_import_config` | 导入配置 | Import config |
+| `action_export_logs` | 导出日志 | Export logs |
+| `action_clear_logs` | 清除日志 | Clear logs |
+| `action_save_image` | 保存图片 | Save image |
+| `state_loading` | 加载中… | Loading… |
+| `state_unknown` | 未知 | Unknown |
+| `host_name_wetype` | 微信输入法 | WeType |
+| `host_name_doubao` | 豆包输入法 | Doubao IME |
+| `host_picker_title` | 选择宿主 | Choose host |
+| `host_no_access_hint` | 无法读取该宿主配置（不同应用的数据目录不可互访），当前仅供查看 | Cannot read that host's config (separate app data) |
+| `title_injection` | 注入状态 | Injection status |
+| `injection_none` | 未观测到注入 | Injection not observed |
+| `injection_none_hint` | 打开输入法并切换一次键盘后再回来查看 | Open the IME and switch the keyboard once |
+| `injection_hook_missing` | 模块已加载，Hook 未安装 | Module loaded, hook not installed |
+| `injection_hook_missing_hint` | 输入法版本可能已变更，可通过日志反馈 | The IME version may have changed; report with logs |
+| `injection_ok` | Hook 已注入 | Hook injected |
+| `injection_ok_hint` | 当前生效配置 revision %1$d | Active config revision %1$d |
+| `injection_heartbeat` | 最近心跳 %1$s · 模块 %2$s | Last heartbeat %1$s · module %2$s |
+| `title_down_vibration` | 按下震动 | Press vibration |
+| `title_up_vibration` | 抬起震动 | Release vibration |
+| `title_system_haptic_style` | 系统震动风格 | System haptic style |
+| `label_down` | 按下 | Press |
+| `label_up` | 抬起 | Release |
+| `label_curve_preview` | 曲线预览 | Curve preview |
+| `curve_summary` | 强度 0~255 · 时间累计 %1$d ms（曲线为预览，实际按离散数值执行） | Amplitude 0–255 · total %1$d ms (preview only) |
+| `action_setup_waveform` | 设置波形 | Edit waveform |
+| `waveform_not_set` | 未配置 · 将载入默认四段波形 | Not set · default 4-segment waveform will load |
+| `waveform_set` | 已配置 · %1$d 段 | Configured · %1$d segments |
+| `duration_label` | %1$s震动时长：%2$d ms | %1$s duration: %2$d ms |
+| `strength_label` | %1$s震动强度：%2$d%% | %1$s strength: %2$d%% |
+| `action_test` | 测试%1$s震动 | Test %1$s vibration |
+| `reset_confirm_message` | 将当前宿主的震动设置与自定义波形恢复为默认值？ | Restore this host's vibration settings and waveform to defaults? |
+| `reset_done` | 已恢复默认配置 | Defaults restored |
+| `reload_summary` | 通过 Root 快速重启目标输入法进程 | Restart the target IME process via root |
+| `reload_ok` | 成功：已重启 %1$s | Done: %1$s restarted |
+| `reload_no_root` | 失败：没有 root 权限 | Failed: no root |
+| `reload_no_su` | 失败：找不到 su | Failed: su not found |
+| `reload_failed` | 失败：%1$s | Failed: %1$s |
+| `waveform_save_failed` | 波形保存失败 | Failed to save waveform |
+| `waveform_saved` | %1$s波形已保存 | %1$s waveform saved |
+| `waveform_invalid` | 波形数据不合法 | Invalid waveform data |
+| `waveform_legacy_warn` | 检测到历史波形数据长度或数组不一致，已载入默认波形草稿；保存后将按当前数量规范化。 | Legacy waveform data is inconsistent; a default draft was loaded |
+| `read_config_failed` | 读取当前配置失败 | Failed to read config |
+| `title_down_waveform` | 按下波形 | Press waveform |
+| `title_up_waveform` | 抬起波形 | Release waveform |
+| `segment_count_label` | 有效波段数（%1$d~%2$d） | Segments (%1$d–%2$d) |
+| `segment_index` | 波段 %1$d | Segment %1$d |
+| `segment_first_fixed` | 0（固定） | 0 (fixed) |
+| `label_timing_ms` | 时长(ms) | Duration (ms) |
+| `label_amplitude` | 强度(0-255) | Amplitude (0–255) |
+| `label_timing_range` | 时长(ms，0~%1$d) | Duration (ms, 0–%1$d) |
+| `label_timing_fixed_hint` | 时长：0 ms（首段固定，不可编辑） | Duration: 0 ms (first segment is fixed) |
+| `label_amplitude_range` | 强度(0~%1$d) | Amplitude (0–%1$d) |
+| `waveform_sync_hint` | 调整会立即同步到曲线与下方输入行。 | Changes sync to the curve and rows below |
+| `waveform_down_desc` | 手指按下时的自定义波形；曲线为预览，实际按离散数值执行。 | Custom waveform on press; the curve is a preview |
+| `waveform_up_desc` | 手指抬起时的自定义波形；曲线为预览，实际按离散数值执行。 | Custom waveform on release; the curve is a preview |
+| `waveform_editor_summary` | 强度 0~255 · 时间累计 %1$d ms · 选中：波段 %2$d（时长 %3$dms，强度 %4$d） | Amplitude 0–255 · total %1$d ms · selected: segment %2$d (%3$d ms, %4$d) |
+| `waveform_curve_a11y` | 波形曲线预览，点击节点可编辑对应波段；下方输入行同样可编辑 | Waveform preview; tap a node to edit that segment |
+| `input_integer_required` | 请输入整数 | Enter an integer |
+| `input_range` | 范围 %1$d~%2$d | Range %1$d–%2$d |
+| `error_segment_count` | 有效波段数需在 %1$d~%2$d 之间 | Segment count must be %1$d–%2$d |
+| `error_segment_incomplete` | 波段数据不完整 | Incomplete segment data |
+| `error_first_timing_zero` | 首段时长必须为 0 | First segment duration must be 0 |
+| `error_timing_negative` | 波段 %1$d 时长不能为负 | Segment %1$d duration cannot be negative |
+| `error_timing_too_long` | 波段 %1$d 时长不能超过 %2$d ms | Segment %1$d duration cannot exceed %2$d ms |
+| `error_amplitude_range` | 波段 %1$d 强度需在 0~%2$d 之间 | Segment %1$d amplitude must be 0–%2$d |
+| `error_no_positive_timing` | 至少需要一段大于 0 ms 的波段 | At least one segment must exceed 0 ms |
+| `title_module_settings` | 模块设置 | Module settings |
+| `title_color_mode` | 颜色模式 | Color mode |
+| `title_debug_logs` | 调试与日志 | Debug & logs |
+| `summary_debug_logs` | 开启后按分类写入宿主配置目录（重启输入法后生效） | Write categorized logs to the host config dir |
+| `summary_clear_logs` | 删除当前宿主全部日志 | Delete this host's logs |
+| `summary_export_logs` | 打包当前宿主日志为 zip | Zip this host's logs |
+| `toast_logs_cleared` | 日志已清除 | Logs cleared |
+| `toast_logs_exported` | 日志已导出 | Logs exported |
+| `toast_logs_empty` | 没有可导出的日志 | No logs to export |
+| `toast_export_failed` | 导出失败：%1$s | Export failed: %1$s |
+| `toast_config_exported` | 配置已导出 | Config exported |
+| `toast_config_imported` | 配置已导入 | Config imported |
+| `toast_read_file_failed` | 读取文件失败 | Failed to read file |
+| `error_import_format` | 导入失败：文件格式不正确 | Import failed: bad file format |
+| `summary_export_config` | 导出当前宿主设置与波形（JSON） | Export this host's settings and waveform (JSON) |
+| `summary_import_config` | 从 JSON 恢复当前宿主设置与波形 | Restore this host's settings from JSON |
+| `title_help` | 帮助文档 | Help |
+| `summary_help` | 使用说明与波形格式 | Usage and waveform format |
+| `help_load_failed` | 加载失败，请检查网络，或到仓库查看 README。 | Failed to load. Check network or read the README |
+| `title_about` | 关于作者 | About |
+| `title_repo` | 仓库 | Repository |
+| `title_coolapk` | 酷安主页 | Coolapk |
+| `title_channel` | 频道 | Channel |
+| `title_sponsor` | 赞助 | Sponsor |
+| `summary_sponsor` | 扫码支持作者，也可以先保存图片再识别 | Scan to support the author, or save the image first |
+| `sponsor_qr_a11y` | 赞助二维码 | Sponsor QR code |
+| `toast_saved_to_gallery` | 已保存到相册：Pictures/WeDouVibrator | Saved to Pictures/WeDouVibrator |
+| `toast_save_failed` | 保存失败 | Save failed |
+| `link_unavailable` | 链接待补充 | Link not available |
+| `toast_open_link_failed` | 无法打开链接 | Cannot open link |
+| `toast_open_settings_failed` | 无法在输入法内打开设置页，请反馈输入法版本 | Cannot open settings inside the IME |
 
-**闸门 P0（两个宿主都要过）**
+`arrays.xml`：
 
-- [ ] 点 FAB 后出现新页面，文本里的 `host=` 是对应输入法包名，`pid` 与 `adb shell pidof <host>` 一致；
-- [ ] `adb shell run-as <host> ls files` 能看到 Application 创建的证据（或直接在页面里写一个探针文件并用 `run-as` 确认存在）；
-- [ ] 返回键 / 顶栏返回能回到输入法设置页，输入法不崩；
-- [ ] 宿主其余功能正常（设置页其它按钮、输入法打字）。
+| 资源名 | 中文项 | EN 项 |
+| --- | --- | --- |
+| `vibration_modes` | 无震动 / 系统预设风格 / 简单自定义 / 自定义波形 | Off / System preset / Simple custom / Custom waveform |
+| `system_haptics` | Virtual Key … Toggle Off（20 项，见现有 `SYSTEM_HAPTICS`） | 同左 |
+| `color_modes` | 浅色 / 深色 / 跟随系统 | Light / Dark / Follow system |
 
-**若闸门失败**：改走 §7 的回退方案 F1，并写报告说明失败点（是 `newActivity` 没被调用，还是类加载失败，还是资源/主题崩溃）。
+---
 
-**建议 commit**：`feat(host-ui): 宿主进程内设置 Activity 可行性验证（P0）`
+## 8. 阶段与闸门
 
-### P1 — 存储层迁到宿主目录
+> 顺序不可调换：文案资源化（P4）要求 `.kt` 中不再有中文字面量，因此被取代的旧页面必须在 P2 就删除。
 
-1. 新增 `HostPaths`、重写 `ConfigStore`（原子写工具）、新增 `SettingsRepository`（读/写/监听/快照）。
-2. `RemoteConfig` 精简为数据模型 + 波形编解码；`RemoteConfig.displayName` 迁到 `HostCatalog`。
-3. `MainModule` 改为使用 `SettingsRepository.attach(host)`（读文件 + `FileObserver` + 迁移逻辑 §4.4.3）。
-4. `FAB 位置` 从 Remote 改到 `ui.json`。
-5. 此阶段 UI 仍走旧 `ConfigRepository`（保留双写风险窗口，仅用于过渡），但**新页面 P0 的 TextView 能显示读到的配置**。
+### P0 — 底座切换与宿主内 Activity
 
-**闸门 P1**
+**改动**
 
-- [ ] 手动改 `settings.json`（`adb shell`），输入法震动行为在 1s 内变化（FileObserver 生效）；
-- [ ] 波形改 `haptic.json` 后同样生效；
-- [ ] 首次进入时能从 1.3.0 Remote 配置或旧 `config.xml` 迁移出正确数值（构造一份旧文件测）；
-- [ ] 文件写坏（写入非法 JSON）时 Hook 不崩、保留上一份缓存。
+1. `app/build.gradle.kts`：加 YukiHook 三件套 + KSP + appcompat；设 `--package-id 0x64`；删 `service`/`interface` 依赖。
+2. 删除 `app/src/main/resources/META-INF/xposed/` 三个文件。
+3. 新增 `HookEntry.kt`（注解 + `encase` + 触摸 Hook）+ `HostCatalog.kt`。
+4. 新增 `BaseHostActivity.kt` + `SettingsActivity.kt`（先用 `TextView` 显示 `packageName` / `pid` / `filesDir`）。
+5. 新增 `themes.xml` 的 `Theme.WeTypeHookR`、`strings.xml` 的 `app_name` / `module_description`。
+6. `HostFabInjector` 的点击改为 `startActivity(Intent(ctx, SettingsActivity::class.java))`。
+7. Manifest：加 `android:description`。
 
-**建议 commit**：`feat(config): 配置改存宿主目录并支持文件热更新（P1）`
+**闸门**
 
-### P2 — 设置页正式迁移
+- [ ] `assembleRelease` 通过，APK 内 `META-INF/xposed/` 由编译器生成且内容正确（`java_init.list` 指向编译生成的入口类）。
+- [ ] 两个宿主上点 FAB 都能起页面，页面上的 `packageName` / `pid` 与宿主一致。
+- [ ] 打字仍有震动（触摸 Hook 迁移后行为不变）。
+- [ ] 返回键回到输入法设置页，输入法不崩。
 
-1. `SettingsScreen.kt`：`HostSettingsScreen(hostPackage, onBack)` → `SettingsContent(host, onBack, onOpenModuleSettings)`；数据源换 `SettingsRepository`；删除 `SyncState/syncNotice`；注入卡改读 `HookRuntime`；删「复制到其他宿主」。
-2. 顶栏：`SettingsTopBar`（标题 + 宿主副标题 + 可点击）；实现宿主选择弹层（§4.8）。
-3. `SettingsActivity`：`setContent { MiuixTheme(...) { Scaffold { SettingsContent(...) } } }`，处理 `enableEdgeToEdge`、返回。
-4. 自动保存沿用 250ms 防抖 + `onStop` 补写。
+建议 commit：`feat(base): 迁移到 YukiHook 底座并在宿主内启动设置页`
 
-**闸门 P2**
+### P1 — 配置落到宿主目录
 
-- [ ] 两个宿主的设置页都能改模式/时长/强度/波形并即时生效；
-- [ ] 顶栏第二行是宿主名；点击弹出宿主选择，切到另一个宿主时按 §4.8 行为处理（可读→可编辑；不可读→只读+说明）；
-- [ ] 返回后输入法正常；再次进入是同一份配置（无重复保存、无状态错乱）；
-- [ ] 界面无残留"框架/Remote/同步"字样。
+1. 新增 `HostPaths`、`SettingsStore`（读/写/迁移/`FileObserver`）。
+2. `RemoteConfig.kt` 改名 `SettingsModel.kt`，只保留数据模型 + 波形编解码；宿主常量与显示名移到 `HostCatalog`；**同步更新全项目引用**。
+3. `HookEntry` 中改为 `SettingsStore.attach(...)`；`HapticEngine` 缓存由它填充。
+4. FAB 位置与 `color_mode` 改写 `ui.json`。
 
-**建议 commit**：`feat(host-ui): 设置页迁入宿主进程并复用现有组件（P2）`
+**闸门**
 
-### P3 — 文案映射
+- [ ] 手工改 `settings.json`，1 秒内震动行为变化。
+- [ ] 改 `haptic.json` 同样生效。
+- [ ] 构造旧 `config.xml` 可迁移出正确数值。
+- [ ] 写入非法 JSON 时 Hook 不崩、保留旧缓存。
 
-1. 新建 `Texts.kt`，按 §9 清单落全部 key。
-2. 逐文件替换字面量：`SettingsScreen`、`WaveformEditor`、`WaveformCurve`、`HostFabInjector`、`HapticEngine`（Toast）、`ConfigTransfer`、`DebugScreen`、`HostCatalog`、错误/校验提示。
-3. 校验：`grep` 中文只命中 `Texts.kt`。
+建议 commit：`feat(config): 配置改存宿主目录并支持文件热更新`
 
-**闸门 P3**
+### P2 — 设置页 UI（含移除 launcher）
 
-- [ ] 编译通过，`grep -nP '"[^"]*[\x{4e00}-\x{9fff}]' app/src/main/java` 仅 `Texts.kt`；
-- [ ] 把系统语言切到 English，页面文案全部英文且不溢出（重点看 `ArrowPreference.summary`、波形提示、对话框按钮）。
+1. `SettingsScreen.kt` → `SettingsContent(host, modifier, onOpenModuleSettings)`；数据源换 `SettingsStore`；删除同步状态提示；注入卡读进程内状态；删「复制到其他宿主」。
+2. 新增 `SettingsTopBar`、宿主选择弹层、只读态。
+3. `SettingsActivity` 从探针换成真实页面。
+4. **删除** `MainActivity.kt`、`App.kt`、`MainScreen.kt`、`HostSettingsActivity.kt`、`HostGrant.kt`；Manifest 删两个 `<activity>`。
+5. 模块级设置（颜色模式 / 导入导出 / 日志 / 帮助 / 关于）此阶段暂缺，P3 补回。
 
-**建议 commit**：`refactor(i18n): 文案集中到 Texts 映射表（P3）`
+**闸门**
 
-### P4 — 模块设置与调试二级页
+- [ ] 桌面无图标；`resolve-activity` 查不到 launcher。
+- [ ] 四种震动模式、波形编辑、测试、恢复默认、重载输入法全部可用且即时生效。
+- [ ] 顶栏两行文本正确；点击可切换宿主；不可读时进入只读态并提示。
+- [ ] 返回后再进入，配置一致、无重复保存。
 
-1. 从 `MainScreen` 迁出模块级内容到 `ModuleSettingsPage`：颜色模式（写 `ui.json`）、配置导入导出（当前宿主）、调试与日志、帮助文档（在线 README + `compose-markdown`）、关于作者/赞助。
-2. `DebugDialog` 接入「调试与日志」二级页；`DebugLog` 改直写文件（宿主目录 `logs/`）。
-3. `LegacyConfigImporter` 接入「导入旧配置」入口（文件选择器 → 解析 → 写当前宿主配置）。
-4. `ConfigTransfer` 改为单宿主导出/导入。
+建议 commit：`feat(ui): 设置页在宿主内复用并移除独立入口`
 
-**闸门 P4**
+### P3 — 模块设置与调试页
 
-- [ ] 颜色模式切换即时生效并持久化（重启输入法后仍是该值）；
-- [ ] 导出 zip/JSON 成功、内容正确；导入后配置生效；
-- [ ] 调试开关打开后 `logs/` 出现日志文件，关闭后不再增长；清除/导出可用。
+1. `ModuleSettingsPage.kt`：颜色模式、配置导入导出（当前宿主）、帮助、关于/赞助。
+2. 调试与日志：开关、清除、导出；`DebugLog` 直写文件；`DebugScreen` 接入。
+3. 「导入旧配置」入口接 `LegacyConfigImporter`。
 
-**建议 commit**：`feat(host-ui): 模块设置与调试页并入宿主内设置页（P4）`
+**闸门**
+
+- [ ] 颜色模式切换即时生效并持久化。
+- [ ] 导出/导入 JSON 正确；日志开关、清除、导出可用。
+
+建议 commit：`feat(ui): 模块设置与调试页并入宿主内设置页`
+
+### P4 — 文案资源化
+
+按 §7 建 `strings.xml` / `values-en/strings.xml` / `arrays.xml`，替换全部字面量。
+
+**闸门**
+
+- [ ] `grep -nP '"[^"]*[\x{4e00}-\x{9fff}]' app/src/main/java` 无结果（注释除外）。
+- [ ] 系统语言切英文后页面无中文、无截断。
+
+建议 commit：`refactor(i18n): 文案迁移到字符串资源`
 
 ### P5 — 清理与回归
 
-1. 删除 §2.1 标"删除"的文件；清理 `AndroidManifest.xml`（无 launcher、无 Activity、无 Service、无 `android:name`）。
-2. 移除依赖：`io.github.libxposed:service`、`interface`、`miuix-blur`、`navigation-compose`、`navigationevent-compose`、`coil`（逐个 `grep` 确认后删）。
-3. `proguard-rules.pro` 增加/确认：`SettingsActivity`、`Texts`、`HostActivityInjector` 不被移除（`-keep class com.haostoo.wetypehookr.** { *; }` 已覆盖，确认即可）。
-4. 全量回归 + 更新文档（`DEVELOPMENT_GUIDE.md`、README 更新日志）。
+1. 删除 `RemoteService`、`LogService`、`ModulePrefs`、`ConfigRepository`、`ConfigStore`、`LiquidGlassBar` + `liquid/` + `miuixanim/`、`ui/theme/`、`WeTypeHookRApp.kt`。
+2. Manifest：去掉 `<service>` 与 `android:name`，只留 `<application>`（label/description）+ `queries`。
+3. 依赖瘦身（miuix-blur / navigation / coil 等确认无引用后删除）。
+4. 全量回归 + 回写 `DEVELOPMENT_GUIDE.md`。
 
-**闸门 P5**
+**闸门**
 
-- [ ] `assembleRelease` 通过，产物可安装；
-- [ ] 桌面无模块图标；`adb shell cmd package resolve-activity --brief com.haostoo.wetypehookr` 无 launcher 结果；
-- [ ] §8 验收清单全绿；
-- [ ] `DEVELOPMENT_GUIDE.md` 已改为新架构（至少 §1、§2.4、§3、§4.2、§4.10、§5.4 需重写，删除 Remote/Service/凭证相关段落）。
+- [ ] `assembleRelease` 通过。
+- [ ] §11 验收清单全绿。
 
-**建议 commit**：`refactor!: 移除独立设置 App 与 Remote 配置通道（P5）`
+建议 commit：`refactor!: 移除残留通道与依赖，完成宿主内设置页改造`
 
----
+## 9. 文件清单
 
-## 6. P0 的详细操作步骤（照做即可）
+**新增**
 
-1. **确认基线**
-   ```bash
-   cd D:/Users/huang/IdeaProjects/WeTypeHookR
-   git status --short      # 应干净（或只有本任务新增文件）
-   git rev-parse --abbrev-ref HEAD   # 必须是 dev
-   ```
-2. **构建基线**（仓库无 `gradlew`）：
-   ```bash
-   /c/Users/huang/.gradle/wrapper/dists/gradle-9.5.0-bin/bvnork1r7n8i6kp5cnkibsc9q/gradle-9.5.0/bin/gradle.bat \
-     -p 'D:/Users/huang/IdeaProjects/WeTypeHookR' :app:assembleRelease --console=plain
-   ```
-3. **查宿主 Activity 清单**（决定 stub），把结果写进 `HostCatalog.STUBS`：
-   ```bash
-   adb shell dumpsys package com.tencent.wetype        | sed -n '/Activities:/,/Providers:/p'
-   adb shell dumpsys package com.bytedance.android.doubaoime | sed -n '/Activities:/,/Providers:/p'
-   ```
-   选 `launchMode` 为空（standard）、名称看起来"无害"的（如 `*SplashActivity`、`*WebActivity`、`*AboutActivity`）。
-4. **按 §4.2 写代码**，`SettingsActivity` 先用 `TextView`。
-5. **安装验证**：
-   ```bash
-   adb install -r app/build/outputs/apk/release/app-universal-release.apk
-   adb shell am force-stop com.tencent.wetype     # 让 Hook 重新注入
-   adb logcat -s WETYPE_HOOK WETYPE_INJECT WETYPE_FAB
-   ```
-6. 过闸门 → 记录 stub 选择结果与现象 → commit。
+| 文件 | 职责 |
+| --- | --- |
+| `HookEntry.kt` | `@YukiHookLibXposedEntry` 入口，`encase` / `loadApp` 装配 |
+| `HostCatalog.kt` | 宿主包名、显示名、proxy 类名、版本查询 |
+| `BaseHostActivity.kt` | `AppCompatActivity` + `ModuleActivity` 委托 |
+| `SettingsActivity.kt` | 宿主内设置页宿主容器（edge-to-edge、Compose） |
+| `SettingsTopBar.kt` | 标题 + 宿主副标题 + 点击切换 |
+| `HostPaths.kt` | 宿主目录路径 |
+| `SettingsStore.kt` | 配置读写 / 原子写 / 迁移 / `FileObserver` |
+| `HookRuntime.kt` | 进程内注入状态 |
+| `ModuleSettingsPage.kt` | 模块设置 / 调试 / 帮助 / 关于（可拆多文件） |
+| `SettingsModel.kt` | 设置与波形数据模型（`RemoteConfig.kt` 改名而来，只留模型 + 波形编解码） |
 
----
+**改造**
 
-## 7. 风险与回退
+| 文件 | 改动 |
+| --- | --- |
+| `app/build.gradle.kts` | 依赖、KSP、资源包 ID |
+| `AndroidManifest.xml` | label/description、移除组件（P2 删 Activity，P5 删 Service） |
+| `HapticEngine.kt` | 抽出 `dispatch(view, event)` |
+| `SettingsScreen.kt` | 数据源与顶栏改造 |
+| `WaveformEditor.kt` / `WaveformCurve.kt` | 仅替换文案引用 |
+| `HostFabInjector.kt` | 点击改跳转；位置写 `ui.json` |
+| `DebugLog.kt` | 直写文件 |
+| `LogStore.kt` | 路径改宿主目录 |
+| `ConfigTransfer.kt` | 单宿主导入导出 |
+| `DebugScreen.kt` | 接入二级页 |
+| `LegacyConfigImporter.kt` | 接入迁移入口 |
+| `proguard-rules.pro` | 确认 `HookEntry`、`SettingsActivity`、`BaseHostActivity` 保留 |
 
-| 风险 | 概率 | 表现 | 应对 |
-| --- | --- | --- | --- |
-| stub 被宿主声明为 `singleTask`，`newActivity` 不触发 | 中 | 点 FAB 无反应或直接进了宿主自己的页面 | 换 stub（多候选轮询）；`launch()` 后 500ms 检测未启动则 Toast |
-| 宿主版本升级改了 Activity 名 | 中 | FAB 点击 Toast 失败 | `HostCatalog` 多候选 + 失败提示文案；FAB 本身不受影响 |
-| 类加载失败（模块 ClassLoader 不能加载 UI 类） | 低 | `ClassNotFoundException` 崩溃宿主 | 在 `newActivity` hook 里 `try/catch`，失败回退 `chain.proceed()`（宿主走原页面），并记日志 |
-| 主题/ActionBar 导致视觉异常或崩溃 | 中 | 顶部多一条 ActionBar 或 `IllegalStateException` | `requestWindowFeature(FEATURE_NO_TITLE)`；换 NoActionBar 的 stub |
-| 宿主自定义 `Instrumentation` 与 hook 冲突 | 低 | 注入不生效 | 记录宿主 `Instrumentation` 类名；必要时改为 hook `ActivityThread.performLaunchActivity`（Android 13 与 14+ 签名不同，需双分支） |
-| 外部存储不可用 | 低 | 配置写失败 | `getExternalFilesDir` 为 null 时回退 `filesDir` |
-| 无 launcher 后 FAB 注入失败 = 用户没有入口 | 中 | 无法进入设置 | 失败提示 + README FAQ 说明；后续可考虑宿主内长按手势入口（不在本任务范围） |
+**删除**
 
-**回退方案 F1（P0 失败时）**：不动 Activity 注入，改为"在宿主设置 Activity 之上叠一个全屏 `Dialog` + `ComposeView`"：
-
-```kotlin
-val dialog = Dialog(hostActivity, android.R.style.Theme_Material_Light_NoActionBar)
-val view = ComposeView(hostActivity).apply {
-    setViewTreeLifecycleOwner(hostActivity as? LifecycleOwner ?: HostLifecycle())
-    setViewTreeSavedStateRegistryOwner(...)
-    setContent { ... }
-}
-dialog.setContentView(view); dialog.show()
-```
-
-限制：宿主 Activity 若不是 `ComponentActivity`，需要自建 `LifecycleOwner`/`SavedStateRegistryOwner`；窗口不进入任务栈；部分输入法会因 `Dialog` 遮挡而出现输入法面板闪烁。**F1 是兜底，不是首选**；采用它必须在报告里写明原因。
-
----
-
-## 8. 验收清单（交付前逐条勾）
-
-**形态**
-- [ ] 桌面无模块图标，无 launcher Activity，Manifest 无多余组件
-- [ ] 模块仍被 LSPosed 正常识别（模块列表可见、作用域两个宿主）
-
-**入口**
-- [ ] 微信输入法设置页有且只有一个 FAB；其它页面没有
-- [ ] 豆包输入法设置页同上
-- [ ] 点 FAB 打开设置页，页面运行在宿主进程（pid、packageName 校验）
-- [ ] 返回后回到输入法原设置页，输入法不重启、不崩溃
-
-**页面**
-- [ ] 顶栏第一行模块标题、第二行宿主名；点击标题/副标题出现宿主选择
-- [ ] 切换宿主：可读则切换并可编辑；不可读则只读 + 说明，且不误写对方配置
-- [ ] 按下/抬起：四种模式全部可用；系统预设 20 项可选；简单自定义滑杆可用；自定义波形可编辑保存
-- [ ] 曲线预览点击节点可编辑；非法值有提示且保存被禁用
-- [ ] 恢复默认、重载输入法（root）可用
-- [ ] 模块设置：颜色模式、导入/导出配置、调试与日志、帮助文档、关于/赞助
-- [ ] 页面无"框架/Remote/同步中"字样；错误提示均为 `Texts` 文案
-
-**数据**
-- [ ] 配置写入 `<host>/files/haostoo/config/`，结构符合 §4.4.2
-- [ ] 改文件后 1s 内 Hook 生效
-- [ ] 两个宿主的配置互不影响
-- [ ] 从 1.3.0（Remote）或 1.2.x（config.xml）升级时配置被正确迁移
-
-**工程**
-- [ ] `assembleRelease` 通过；APK 内 `META-INF/xposed/*` 三个文件正确
-- [ ] 源码无中文字面量（`Texts.kt` 除外）
-- [ ] `DEVELOPMENT_GUIDE.md` 已同步新架构
-- [ ] 提交在 `dev` 分支，未动 `master`
-
----
-
-## 9. 文案 key 清单（R5 全量对照表）
-
-> 用法：`Str.XXX.s()`；带参数用 `%s`/`%d` 并传 `s(arg)`。列表用 `StrList.XXX.items()`。
-> "来源"列是**当前**出现位置，替换后应消失。
-
-### 9.1 通用与动作
-
-| Key | 中文（现状原文） | EN | 来源 |
-| --- | --- | --- | --- |
-| `AppTitle` | 震动设置 | Vibration | 新页面标题（原无） |
-| `Cancel` | 取消 | Cancel | SettingsScreen:249/325/350、WaveformEditor:197 |
-| `Confirm` | 确认 | OK | SettingsScreen:328 |
-| `Save` | 保存 | Save | WaveformEditor:200 |
-| `Close` | 关闭 | Close | DebugScreen:90、MainScreen:711/814 |
-| `Back` | 返回 | Back | SettingsScreen:249 |
-| `Loading` | 加载中… | Loading… | SettingsScreen:290、MainScreen:807 |
-| `Unknown` | 未知 | Unknown | HostInfo:23、SettingsScreen:443 |
-| `VersionFmt` | 版本 %s | Version %s | SettingsScreen:443 |
-| `ComingSoon` | 链接待补充 | Link not available | MainScreen:652/659 |
-| `ChannelLinkMissing` | 频道链接待补充 | Channel link not available | MainScreen:666 |
-| `OpenLinkFailed` | 无法打开链接 | Cannot open link | MainScreen:530 |
-
-### 9.2 宿主与身份
-
-| Key | 中文 | EN | 来源 |
-| --- | --- | --- | --- |
-| `HostWeType` | 微信输入法 | WeType | RemoteConfig:27 |
-| `HostDoubao` | 豆包输入法 | Doubao IME | RemoteConfig:28 |
-| `InjectionStatus` | 注入状态 | Injection status | SettingsScreen:456 |
-| `InjectNone` | 未观测到注入 | Injection not observed | SettingsScreen:458 |
-| `InjectNoneHint` | 打开输入法并切换一次键盘后再回来查看 | Open the IME and switch the keyboard once, then check again | SettingsScreen:458 |
-| `InjectHookMissing` | 模块已加载，Hook 未安装 | Module loaded, hook not installed | SettingsScreen:459 |
-| `InjectHookMissingHint` | 输入法版本可能已变更，可通过日志反馈 | The IME version may have changed; report with logs | SettingsScreen:459 |
-| `InjectOk` | Hook 已注入 | Hook injected | SettingsScreen:460 |
-| `InjectOkHint` | 当前生效配置 revision %d | Active config revision %d | SettingsScreen:460 |
-| `InjectHeartbeat` | 最近心跳 %s · 模块 %s | Last heartbeat %s · module %s | SettingsScreen:475 |
-| `HostPickerTitle` | 选择宿主 | Choose host | 新增 |
-| `HostSwitchNoAccess` | 无法读取该宿主配置（不同应用数据目录不可互访），仅供查看当前宿主 | Cannot read that host's config (separate app data), current host only | 新增 |
-| `ToastInjectFailed` | 无法在输入法内打开设置页，请反馈输入法版本 | Cannot open settings inside the IME; please report the IME version | 新增（替代 HostFabInjector:163） |
-| `SwitchHost` | 切换宿主 | Switch host | 新增（点击区域无障碍描述） |
-
-### 9.3 震动设置
-
-| Key | 中文 | EN | 来源 |
-| --- | --- | --- | --- |
-| `DownVibration` | 按下震动 | Press vibration | SettingsScreen:495 |
-| `UpVibration` | 抬起震动 | Release vibration | SettingsScreen:495 |
-| `SystemHapticStyle` | 系统震动风格 | System haptic style | SettingsScreen:514 |
-| `DownShort` | 按下 | Press | SettingsScreen:174/526/540 |
-| `UpShort` | 抬起 | Release | SettingsScreen:174/526/540 |
-| `CurvePreview` | 曲线预览 | Curve preview | SettingsScreen:565 |
-| `CurveSummaryFmt` | 强度 0~255 · 时间累计 %d ms（曲线为预览，实际按离散数值执行） | Amplitude 0–255 · total %d ms (preview only) | SettingsScreen:579 |
-| `SetupWaveform` | 设置波形 | Edit waveform | SettingsScreen:585 |
-| `WaveformNotSet` | 未配置 · 将载入默认四段波形 | Not set · default 4-segment waveform will load | SettingsScreen:586 |
-| `WaveformSetFmt` | 已配置 · %d 段 | Configured · %d segments | SettingsScreen:586 |
-| `TestDown` | 测试按下震动 | Test press vibration | SettingsScreen:596（`测试$title`） |
-| `TestUp` | 测试抬起震动 | Test release vibration | 同上 |
-| `DownDurationFmt` | 按下震动时长：%d ms | Press duration: %d ms | SettingsScreen:526 |
-| `UpDurationFmt` | 抬起震动时长：%d ms | Release duration: %d ms | 同上 |
-| `DownStrengthFmt` | 按下震动强度：%d %% | Press strength: %d%% | SettingsScreen:540 |
-| `UpStrengthFmt` | 抬起震动强度：%d %% | Release strength: %d%% | 同上 |
-
-### 9.4 其他选项与提示
-
-| Key | 中文 | EN | 来源 |
-| --- | --- | --- | --- |
-| `ResetDefault` | 恢复默认配置 | Restore defaults | SettingsScreen:319/619 |
-| `ResetDefaultSummary` | 恢复当前宿主的默认震动与波形 | Restore default vibration and waveform for this host | SettingsScreen:620 |
-| `ResetConfirm` | 将当前宿主的震动设置与自定义波形恢复为默认值？ | Restore this host's vibration settings and waveform to defaults? | SettingsScreen:320 |
-| `ResetDone` | 已恢复默认配置 | Defaults restored | SettingsScreen:205 |
-| `ReloadIme` | 重载输入法 | Reload IME | SettingsScreen:627 |
-| `ReloadImeSummary` | 通过 Root 快速重启目标输入法进程 | Restart the target IME process via root | SettingsScreen:628 |
-| `ReloadOkFmt` | 成功：已重启 %s | Done: %s restarted | HapticEngine:96 |
-| `ReloadNoRoot` | 失败：没有 root 权限 | Failed: no root | HapticEngine:93 |
-| `ReloadNoSu` | 失败：找不到 su | Failed: su not found | HapticEngine:94 |
-| `ReloadFailFmt` | 失败：%s | Failed: %s | HapticEngine:95/98 |
-| `WaveformSaveFailed` | 波形保存失败 | Failed to save waveform | SettingsScreen:169 |
-| `WaveformSavedFmt` | %s波形已保存 | %s waveform saved | SettingsScreen:174 |
-| `WaveformInvalid` | 波形数据不合法 | Invalid waveform data | SettingsScreen:195 |
-| `WaveformLegacyWarn` | 检测到历史波形数据长度或数组不一致，已载入默认波形草稿；保存后将按当前数量规范化。 | Legacy waveform data is inconsistent; a default draft was loaded and will be normalized on save. | SettingsScreen:181 |
-| `ReadConfigFailed` | 读取当前配置失败 | Failed to read config | SettingsScreen:218 |
-
-### 9.5 波形编辑器
-
-| Key | 中文 | EN | 来源 |
-| --- | --- | --- | --- |
-| `DownWaveform` | 按下波形 | Press waveform | WaveformEditor:212/230、SettingsScreen:236 |
-| `UpWaveform` | 抬起波形 | Release waveform | 同上 |
-| `SegmentCountFmt` | 有效波段数（%d~%d） | Segments (%d–%d) | WaveformEditor:245 |
-| `SegmentIndexFmt` | 波段 %d | Segment %d | WaveformEditor:280/331 |
-| `SegmentZeroFixed` | 0（固定） | 0 (fixed) | WaveformEditor:287 |
-| `TimingLabel` | 时长(ms) | Duration (ms) | WaveformEditor:298 |
-| `AmplitudeLabel` | 强度(0-255) | Amplitude (0–255) | WaveformEditor:306 |
-| `TimingLabelRangeFmt` | 时长(ms，0~%d) | Duration (ms, 0–%d) | WaveformEditor:339 |
-| `TimingZeroFixedHint` | 时长：0 ms（首段固定，不可编辑） | Duration: 0 ms (first segment is fixed) | WaveformEditor:347 |
-| `AmplitudeLabelRangeFmt` | 强度(0~%d) | Amplitude (0–%d) | WaveformEditor:356 |
-| `WaveformSyncHint` | 调整会立即同步到曲线与下方输入行。 | Changes sync to the curve and rows below. | WaveformEditor:363 |
-| `WaveformDownDesc` | 手指按下时的自定义波形；曲线为预览，实际按离散数值执行。 | Custom waveform on press; the curve is a preview. | WaveformEditor:232 |
-| `WaveformUpDesc` | 手指抬起时的自定义波形；曲线为预览，实际按离散数值执行。 | Custom waveform on release; the curve is a preview. | WaveformEditor:234 |
-| `WaveformEditorSummaryFmt` | 强度 0~255 · 时间累计 %d ms · 选中：波段 %d（时长 %dms，强度 %d） | Amplitude 0–255 · total %d ms · selected: segment %d (%d ms, amplitude %d) | WaveformEditor:262 |
-| `InputInteger` | 请输入整数 | Enter an integer | WaveformEditor:401 |
-| `InputRangeFmt` | 范围 %d~%d | Range %d–%d | WaveformEditor:402 |
-| `ErrSegmentCountFmt` | 有效波段数需在 %d~%d 之间 | Segment count must be %d–%d | WaveformEditor:94 |
-| `ErrSegmentIncomplete` | 波段数据不完整 | Incomplete segment data | WaveformEditor:95 |
-| `ErrFirstTimingZero` | 首段时长必须为 0 | First segment duration must be 0 | WaveformEditor:96 |
-| `ErrTimingNegativeFmt` | 波段 %d 时长不能为负 | Segment %d duration cannot be negative | WaveformEditor:98 |
-| `ErrTimingTooLongFmt` | 波段 %d 时长不能超过 %d ms | Segment %d duration cannot exceed %d ms | WaveformEditor:99 |
-| `ErrAmplitudeRangeFmt` | 波段 %d 强度需在 0~%d 之间 | Segment %d amplitude must be 0–%d | WaveformEditor:100 |
-| `ErrNoPositiveTiming` | 至少需要一段大于 0 ms 的波段 | At least one segment must be longer than 0 ms | WaveformEditor:102 |
-| `WaveformCurveA11y` | 波形曲线预览，点击节点可编辑对应波段；下方输入行同样可编辑 | Waveform preview; tap a node to edit that segment | WaveformCurve:168 |
-
-### 9.6 模块设置 / 调试 / 关于
-
-| Key | 中文 | EN | 来源 |
-| --- | --- | --- | --- |
-| `ColorMode` | 颜色模式 | Color mode | MainScreen:544 |
-| `DebugAndLogs` | 调试与日志 | Debug & logs | DebugScreen:56 |
-| `DebugOutput` | 调试输出 | Debug output | DebugScreen:66、MainScreen:588 |
-| `DebugOutputSummary` | 开启后按分类上报日志到模块目录（保存后生效） | Write categorized logs to the config dir | DebugScreen:67 |
-| `ClearLogs` | 清除日志 | Clear logs | DebugScreen:75、MainScreen:608 |
-| `ClearLogsSummary` | 删除该宿主全部日志 | Delete this host's logs | DebugScreen:76 |
-| `ClearLogsAllSummary` | 删除全部宿主日志 | Delete all logs | MainScreen:609 |
-| `LogsCleared` | 日志已清除 | Logs cleared | DebugScreen:79、MainScreen:615 |
-| `ExportLogs` | 导出日志 | Export logs | DebugScreen:84、MainScreen:600 |
-| `ExportLogsSummary` | 打包该宿主日志为 zip，选择保存位置 | Zip this host's logs | DebugScreen:85 |
-| `ExportLogsAllSummary` | 打包全部宿主日志为 zip | Zip all logs | MainScreen:601 |
-| `LogsExported` | 日志已导出 | Logs exported | DebugScreen:44、MainScreen:513 |
-| `LogsEmpty` | 没有可导出的日志 | No logs to export | DebugScreen:50、MainScreen:519 |
-| `ExportFailedFmt` | 导出失败：%s | Export failed: %s | DebugScreen:46、MainScreen:481/515 |
-| `ExportConfig` | 导出配置 | Export config | MainScreen:563 |
-| `ExportConfigSummary` | 导出当前宿主设置与波形（JSON） | Export this host's settings and waveform (JSON) | MainScreen:564（原为"全部宿主"） |
-| `ImportConfig` | 导入配置 | Import config | MainScreen:571 |
-| `ImportConfigSummary` | 从 JSON 恢复当前宿主设置与波形 | Restore this host's settings from JSON | MainScreen:572 |
-| `ConfigExported` | 配置已导出 | Config exported | MainScreen:479 |
-| `ConfigImported` | 配置已导入 | Config imported | MainScreen:496 |
-| `ReadFileFailed` | 读取文件失败 | Failed to read file | MainScreen:494 |
-| `ImportFormatError` | 导入失败：文件格式不正确 | Import failed: bad file format | MainScreen:498 |
-| `HelpDoc` | 帮助文档 | Help | MainScreen:628/774 |
-| `HelpDocSummary` | 使用说明与波形格式 | Usage and waveform format | MainScreen:629 |
-| `HelpLoadFailed` | 加载失败，请检查网络，或到仓库查看 README。 | Failed to load. Check network or read the README in the repo. | MainScreen:801 |
-| `AboutAuthor` | 关于作者 | About | MainScreen:645 |
-| `Repo` | 仓库 | Repository | MainScreen:648 |
-| `Coolapk` | 酷安主页 | Coolapk | MainScreen:655 |
-| `Channel` | 频道 | Channel | MainScreen:662 |
-| `Sponsor` | 赞助 | Sponsor | MainScreen:669/689 |
-| `SponsorSummary` | 扫码支持作者，也可以先保存图片再识别 | Scan to support the author, or save the image first | MainScreen:690 |
-| `SponsorQrA11y` | 赞助二维码 | Sponsor QR code | MainScreen:698 |
-| `SaveImage` | 保存图片 | Save image | MainScreen:717 |
-| `SavedToGallery` | 已保存到相册：Pictures/WeDouVibrator | Saved to Pictures/WeDouVibrator | MainScreen:756 |
-| `SaveFailed` | 保存失败 | Save failed | MainScreen:756 |
-
-### 9.7 列表映射（`StrList`）
-
-| StrList | 中文 | EN |
-| --- | --- | --- |
-| `Modes` | 无震动 / 系统预设风格 / 简单自定义 / 自定义波形 | Off / System preset / Simple custom / Custom waveform |
-| `SystemHaptics` | Virtual Key、Virtual Key Release、Keyboard Tap、Keyboard Press、Keyboard Release、Long Press、Context Click、Confirm、Reject、Clock Tick、Gesture Start、Gesture End、Gesture Threshold Activate、Gesture Threshold Deactivate、Drag Start、Text Handle Move、Segment Tick、Segment Frequent Tick、Toggle On、Toggle Off（20 项，中英相同） | 同左 |
-| `ColorModes` | 浅色 / 深色 / 跟随系统 | Light / Dark / Follow system |
-
-> 系统设置页的「系统版本 / 应用版本 / Android 版本 / 框架版本 / 设备型号」属概览页内容，概览页随 `MainScreen` 删除；如需保留，改为「关于」二级页，key 为 `SysVersion` / `AppVersion` / `AndroidVersion` / `FrameworkVersion` / `DeviceModel`。
+`MainActivity.kt`、`App.kt`、`MainScreen.kt`、`HostSettingsActivity.kt`、`HostGrant.kt`、`RemoteService.kt`、`LogService.kt`、`ModulePrefs.kt`、`ConfigRepository.kt`、`ConfigStore.kt`、`LiquidGlassBar.kt`、`liquid/`、`miuixanim/`、`ui/theme/`、`resources/META-INF/xposed/`、`WeTypeHookRApp.kt`。
 
 ---
 
 ## 10. 禁止事项
 
-1. **不要**尝试 `BaseDexClassLoader`/`pathList`/`addDexPath` 注入 dex（hidden API + 版本脆弱，本任务不需要）。
-2. **不要**去 hook `PackageManager` 伪造 `ActivityInfo`：system_server 不认，客户端伪造只会引入不一致。
-3. **不要**恢复 LibXposed Remote / `XposedService` / AIDL / `HostGrant` / 免 Root 方案。
-4. **不要**在宿主进程里 `createPackageContext(模块包)` 取资源（会被包可见性拦截），只用 `getResourcesForApplication(getModuleApplicationInfo())`。
-5. **不要**在 `Instrumentation.newActivity` hook 里做除"判断 marker + 换两参数"之外的任何事，更不能吞掉宿主自己的 Activity 创建。
-6. **不要**在输入事件 Hook 路径里加 IO、锁、反射查找。
-7. **不要**用 `androidx.compose.ui.window.Dialog` / 自绘悬浮窗替代 miuix `Overlay*`；所有弹层必须在 `Scaffold` 子树内。
-8. **不要**删除 `META-INF/xposed/` 三个文件；**不要**给模块加回 `LAUNCHER`。
-9. **不要**把配置写到模块自己的目录（R3 明确要求宿主目录）。
-10. **不要**在未获用户批准时合并到 `master`，也不要 `git push --force`。
-11. 设备操作边界：未经许可不重启手机、不改 LSPosed 数据库、不 `kill` 系统进程；`am force-stop <宿主>` 仅在你自己的调试流程里使用，并在报告里说明。
+1. **不要**手写 `META-INF/xposed/*`（与编译器生成冲突，编译失败）。
+2. **不要**把资源包 ID 设为 `0x7f`。
+3. **不要**让非 `ModuleActivity` 子类作为设置页（注册机制不接管）。
+4. **不要**在宿主进程里用 `createPackageContext(模块包)` 取资源（包可见性会拒），模块资源已由框架注入。
+5. **不要**给配置引入第二个权威源（SharedPreferences / 云端 / 任何跨进程通道）；文件是唯一来源。
+6. **不要**在 Hook 的触摸回调里做文件 IO、加锁或反射查找。
+7. **不要**用 `androidx.compose.ui.window.Dialog` 等自绘弹层替代 miuix `Overlay*`。
+8. **不要**开启热重载（设置页存活时会被框架拒绝）。
+9. **不要**恢复 launcher Activity。
+10. **不要**未经批准合并到 `master`，也不要 `push --force`。
+11. 设备操作边界：不擅自重启手机、不改 LSPosed 数据库、不 kill 系统进程；`am force-stop <宿主>` 仅用于让 Hook 重新注入。
 
 ---
 
-## 11. 调试手册
+## 11. 验收清单
 
-| 场景 | 命令 / 方法 |
+**形态**
+- [ ] 桌面无图标；Manifest 无 Activity/Service；LSPosed 能识别模块与两个作用域
+- [ ] APK 内 `META-INF/xposed/` 由编译器生成，`java_init.list` 指向正确入口
+
+**入口**
+- [ ] 两个宿主的设置页有且只有一个 FAB；其它页面没有
+- [ ] FAB 打开设置页，`packageName` / `pid` 为宿主；返回后输入法正常
+
+**页面**
+- [ ] 顶栏两行（模块名 / 宿主名）；点击弹出宿主选择
+- [ ] 切换宿主：可读可编辑；不可读只读 + 提示；无跨宿主复制
+- [ ] 四种模式、波形编辑、曲线交互、测试、恢复默认、重载输入法均可用
+- [ ] 模块设置 / 日志 / 帮助 / 关于可用
+- [ ] 深浅色切换正常，英文下无中文残留与文字溢出
+
+**数据**
+- [ ] 配置写入 `<host>/files/haostoo/config/`；改文件后 1 秒内生效
+- [ ] 两个宿主配置互不影响；旧 `config.xml` 能迁移
+
+**工程**
+- [ ] `assembleRelease` 通过；`dev` 分支提交；`master` 未动
+- [ ] `DEVELOPMENT_GUIDE.md` 已按实现结果回写
+
+---
+
+## 12. 调试
+
+| 场景 | 方法 |
 | --- | --- |
-| 看注入是否装好 | `adb logcat -s WETYPE_HOOK WETYPE_INJECT` |
-| 看 Activity 是否被替换 | 在 `newActivity` hook 里 `Log.i("WETYPE_INJECT", "swap -> $className")` |
-| 看设置页进程 | 页面左上角显示 `packageName` + `pid`，对比 `adb shell pidof com.tencent.wetype` |
-| 看配置文件 | `adb shell run-as com.tencent.wetype ls -l files/haostoo/config`（外部目录：`adb shell ls /sdcard/Android/data/com.tencent.wetype/files/haostoo/config`） |
-| 看日志文件 | `adb shell run-as ... cat files/haostoo/logs/vibrate.log` |
-| 强制重注入 | `adb shell am force-stop com.tencent.wetype` 后重新切出键盘 |
-| 复现配置热更新 | 改 `settings.json` 的 `down_strength` → 立刻按键听感变化 |
-| 构建 | 见 §6 第 2 步 |
+| 构建 | `gradle.bat -p <proj> :app:assembleRelease --console=plain`（仓库无 `gradlew`，用本地 9.5.0 发行版） |
+| 看入口是否加载 | `adb logcat -s YukiHook WETYPE_HOOK` |
+| 看 Activity 是否被接管 | 在 `SettingsActivity.onCreate` 打 `WETYPE_UI` 日志，含 `packageName` / `pid` |
+| 看配置 | `adb shell run-as <host> ls -l files/haostoo/config` 或 `adb shell ls /sdcard/Android/data/<host>/files/haostoo/config` |
+| 强制重注入 | `adb shell am force-stop <host>` 后切一次键盘 |
+| 验证热更新 | 改 `settings.json` 的 `down_strength`，立刻按键 |
 
-日志 tag 约定（新增两个，其余沿用）：`WETYPE_INJECT`（注入相关）、`WETYPE_HOSTCFG`（配置读写/迁移）。
+日志 tag：`WETYPE_HOOK`（钩子）、`WETYPE_UI`（设置页）、`WETYPE_CFG`（配置读写/迁移）、`WETYPE_FAB`（入口按钮）。
 
 ---
 
-## 12. 交付物
-
-1. 代码：`dev` 分支上的 P0–P5 提交。
-2. 报告：仓库根目录的 `MIGRATION_REPORT.md`，包含
-   - 两个宿主上 stub 的最终选择与 `launchMode` 实测值；
-   - P0–P5 各闸门的通过情况与证据（日志片段/截图可选）；
-   - 与本文档的偏差清单（哪里没按方案做、为什么）；
-   - 已知问题与后续建议。
-3. 文档回写：`DEVELOPMENT_GUIDE.md` 更新为新架构；README 更新更新日志与"入口只在输入法设置页"的说明。
-
----
-
-## 附录 A：常用路径速查
-
-```
-配置：<host>/files/haostoo/config/settings.json
-波形：<host>/files/haostoo/config/haptic.json
-UI：  <host>/files/haostoo/config/ui.json
-日志：<host>/files/haostoo/logs/<category>.log
-外部目录根：/sdcard/Android/data/<host>/files/haostoo/
-```
-
-## 附录 B：分支与提交
+## 附录：常用命令
 
 ```bash
-git checkout dev
-# 每阶段一次提交，建议 message 见各阶段末尾
-git log --oneline -6
-# 完成后由用户批准再合并：git checkout master && git merge --no-ff dev
+# 构建
+/c/Users/huang/.gradle/wrapper/dists/gradle-9.5.0-bin/bvnork1r7n8i6kp5cnkibsc9q/gradle-9.5.0/bin/gradle.bat \
+  -p 'D:/Users/huang/IdeaProjects/WeTypeHookR' :app:assembleRelease --console=plain
+
+# 安装
+adb install -r app/build/outputs/apk/release/app-universal-release.apk
+
+# 宿主 Activity 清单（选 proxy 用）
+adb shell dumpsys package com.tencent.wetype | sed -n '/Activities:/,/Providers:/p'
+adb shell dumpsys package com.bytedance.android.doubaoime | sed -n '/Activities:/,/Providers:/p'
 ```
