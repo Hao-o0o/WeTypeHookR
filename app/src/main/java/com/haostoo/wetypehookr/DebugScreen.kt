@@ -1,7 +1,8 @@
 package com.haostoo.wetypehookr
 
-import android.content.Intent
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -18,17 +19,37 @@ import top.yukonga.miuix.kmp.preference.SwitchPreference
 import java.io.File
 
 /**
- * 一级 OverlayDialog：调试输出开关 / 清除日志 / 导出日志
+ * 一级 OverlayDialog：调试输出开关 / 清除日志 / 导出日志（按当前宿主）。
  */
 @Composable
 fun DebugDialog(
     show: Boolean,
-    state: SettingsState,
-    onStateChange: (SettingsState) -> Unit,
+    state: SettingsModel.SettingsState,
+    onStateChange: (SettingsModel.SettingsState) -> Unit,
     onDismissRequest: () -> Unit
 ) {
     val context = LocalContext.current
-    val activity = LocalActivity.current
+
+    val exportLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/zip")
+    ) { uri ->
+        if (uri != null) {
+            val zipFile = File(context.cacheDir, "wetype-logs.zip")
+            if (LogStore.exportToZip(context, zipFile)) {
+                runCatching {
+                    context.contentResolver.openOutputStream(uri)?.use { out ->
+                        zipFile.inputStream().use { it.copyTo(out) }
+                    }
+                    Toast.makeText(context, "日志已导出", Toast.LENGTH_SHORT).show()
+                }.onFailure { e ->
+                    Toast.makeText(context, "导出失败：${e.message}", Toast.LENGTH_SHORT).show()
+                }
+                zipFile.delete()
+            } else {
+                Toast.makeText(context, "没有可导出的日志", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
 
     OverlayDialog(
         title = "调试与日志",
@@ -42,30 +63,26 @@ fun DebugDialog(
         ) {
             SwitchPreference(
                 title = "调试输出",
-                summary = "开启后按分类输出日志到 logs 目录",
+                summary = "开启后按分类写入宿主日志目录（保存后生效）",
                 checked = state.debugLog,
                 onCheckedChange = { on ->
                     onStateChange(state.copy(debugLog = on))
-                    // 立即同步主进程缓存，让日志开关即时生效（hld 进程需「保存配置」后同步）
-                    MainModule.cachedSettings = MainModule.cachedSettings.copy(debugLog = on)
-                    if (on) DebugLog.ensureHardwareInfo(context)
-                    DebugLog.log(context, "ui", "debug output ${if (on) "enabled" else "disabled"}")
                 }
             )
 
             ArrowPreference(
                 title = "清除日志",
-                summary = "删除 logs 目录下全部日志",
+                summary = "删除当前宿主的全部日志",
                 onClick = {
-                    DebugLog.clear(context)
+                    LogStore.clear(context)
                     Toast.makeText(context, "日志已清除", Toast.LENGTH_SHORT).show()
                 }
             )
 
             ArrowPreference(
                 title = "导出日志",
-                summary = "打包全部日志为 zip，选择保存位置",
-                onClick = { exportLogs(context, activity) }
+                summary = "打包当前宿主日志为 zip，选择保存位置",
+                onClick = { exportLauncher.launch("wetype-logs.zip") }
             )
         }
         TextButton(
@@ -74,37 +91,4 @@ fun DebugDialog(
             modifier = Modifier.fillMaxWidth()
         )
     }
-}
-
-private fun exportLogs(context: android.content.Context, activity: android.app.Activity?) {
-    if (activity == null) {
-        Toast.makeText(context, "无法启动文件选择器", Toast.LENGTH_SHORT).show()
-        return
-    }
-    val zipFile = File(context.cacheDir, "wetype-logs.zip")
-    if (!DebugLog.exportToZip(context, zipFile)) {
-        Toast.makeText(context, "没有可导出的日志", Toast.LENGTH_SHORT).show()
-        return
-    }
-    val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
-        addCategory(Intent.CATEGORY_OPENABLE)
-        type = "application/zip"
-        putExtra(Intent.EXTRA_TITLE, "wetype-logs.zip")
-    }
-    MainModule.requestLogExport { uri ->
-        runCatching {
-            context.contentResolver.openOutputStream(uri)?.use { out ->
-                zipFile.inputStream().use { it.copyTo(out) }
-            }
-            Toast.makeText(context, "日志已导出", Toast.LENGTH_SHORT).show()
-        }.onFailure { e ->
-            Toast.makeText(context, "导出失败：${e.message}", Toast.LENGTH_SHORT).show()
-        }
-        zipFile.delete()
-    }
-    runCatching { activity.startActivityForResult(intent, MainModule.LOG_EXPORT_REQUEST_CODE) }
-        .onFailure { e ->
-            MainModule.pendingLogExport = null
-            Toast.makeText(context, "启动文件选择器失败：${e.message}", Toast.LENGTH_SHORT).show()
-        }
 }

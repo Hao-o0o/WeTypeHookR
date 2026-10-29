@@ -1,0 +1,10 @@
+<resources>
+    <string name="app_name">Vibration</string>
+    <string name="module_description">Custom two-stage haptic feedback for WeType and Doubao IME</string>
+
+    <string name="host_name_wetype">WeType</string>
+    <string name="host_name_doubao">Doubao IME</string>
+    <string name="state_unknown">Unknown</string>
+
+    <string name="toast_open_settings_failed">Cannot open settings inside the IME</string>
+</resources>

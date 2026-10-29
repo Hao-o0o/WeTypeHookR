@@ -2,85 +2,76 @@ package com.haostoo.wetypehookr
 
 import android.content.Context
 import android.os.Build
+import android.util.Log
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
- * 调试日志工具：按分类输出到 <宿主>/files/haostoo/logs/ 目录。
- * 分类：hardware（硬件/系统信息）、vibrate（震动）、ui（界面）。
- * 受 SettingsState.debugLog 开关控制（保存配置后经 FileObserver 生效）。
+ * 调试日志：直接写宿主日志目录。
+ *
+ * 与 Hook 同进程，不需要绑定 Service。开关来自当前生效配置的 `debug_log`；
+ * 写盘放在单线程队列里，任何异常都只记 `Log.w`，绝不影响输入法。
  */
 object DebugLog {
 
-    fun logsDir(context: Context): File {
-        val dir = File(context.getExternalFilesDir(null), "haostoo/logs")
-        dir.mkdirs()
-        return dir
+    private const val TAG = "WETYPE_CFG"
+
+    /** 单文件阈值，超过后轮转为 `.1`。 */
+    private const val MAX_BYTES = 512L * 1024L
+
+    private val executor = Executors.newSingleThreadExecutor { runnable ->
+        Thread(runnable, "haostoo-log").apply { isDaemon = true }
     }
 
-    fun isEnabled(): Boolean = MainModule.cachedSettings.debugLog
+    private val timeFormat = SimpleDateFormat("MM-dd HH:mm:ss.SSS", Locale.US)
+
+    private val hardwareWritten = AtomicBoolean(false)
+
+    fun isEnabled(): Boolean = HapticEngine.cachedSettings.debugLog
 
     fun log(context: Context, category: String, message: String) {
         if (!isEnabled()) return
-        runCatching {
-            ensureHardwareInfo(context)
-            val f = File(logsDir(context), "$category.log")
-            f.appendText(
-                "[${SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())}] $message\n"
-            )
-        }
+        ensureHardwareInfo(context)
+        append(context.applicationContext ?: context, category, message)
     }
 
-    @Volatile
-    private var hardwareWritten = false
-
-    /** 写入一次硬件/系统信息（文件已存在则跳过） */
+    /** 记录一次硬件/系统信息，每个进程只写一次。 */
     fun ensureHardwareInfo(context: Context) {
-        if (hardwareWritten) return
-        hardwareWritten = true
-        runCatching {
-            val f = File(logsDir(context), "hardware.log")
-            if (f.exists()) return
-            f.writeText(buildHardwareInfo(context))
+        if (!isEnabled()) return
+        if (!hardwareWritten.compareAndSet(false, true)) return
+        append(context.applicationContext ?: context, "hardware", buildHardwareInfo(context))
+    }
+
+    private fun append(context: Context, category: String, message: String) {
+        val line = "${timeFormat.format(Date())} [$category] $message\n"
+        executor.execute {
+            runCatching {
+                val file = File(HostPaths.logs(context), "$category.log")
+                if (file.isFile && file.length() > MAX_BYTES) {
+                    val rotated = File(file.parentFile, "$category.log.1")
+                    if (rotated.exists()) rotated.delete()
+                    file.renameTo(rotated)
+                }
+                file.appendText(line)
+            }.onFailure { Log.w(TAG, "log write failed: $category", it) }
         }
     }
 
-    private fun buildHardwareInfo(context: Context): String {
-        val sb = StringBuilder()
-        sb.appendLine("===== Hardware / System Info =====")
-        sb.appendLine("Brand: ${Build.BRAND}")
-        sb.appendLine("Model: ${Build.MODEL}")
-        sb.appendLine("Manufacturer: ${Build.MANUFACTURER}")
-        sb.appendLine("Device: ${Build.DEVICE}")
-        sb.appendLine("Hardware Platform: ${Build.HARDWARE}")
-        sb.appendLine("Android Version: ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})")
-        sb.appendLine("Security Patch: ${Build.VERSION.SECURITY_PATCH}")
-        sb.appendLine("Supported ABIs: ${Build.SUPPORTED_ABIS.joinToString(", ")}")
-        sb.appendLine("Kernel Version: ${System.getProperty("os.version")}")
-        sb.appendLine("Host Package: ${context.packageName}")
-        return sb.toString()
-    }
-
-    /** 清除全部日志 */
-    fun clear(context: Context) {
-        runCatching { logsDir(context).listFiles()?.forEach { it.delete() } }
-    }
-
-    /** 把 logs 目录下全部日志打包为 zip 到 targetFile */
-    fun exportToZip(context: Context, targetFile: File): Boolean {
-        return runCatching {
-            val logs = logsDir(context).listFiles()?.filter { it.isFile }.orEmpty()
-            if (logs.isEmpty()) return false
-            java.util.zip.ZipOutputStream(targetFile.outputStream()).use { zos ->
-                logs.forEach { f ->
-                    zos.putNextEntry(java.util.zip.ZipEntry(f.name))
-                    f.inputStream().use { it.copyTo(zos) }
-                    zos.closeEntry()
-                }
-            }
-            true
-        }.getOrDefault(false)
+    private fun buildHardwareInfo(context: Context): String = buildString {
+        appendLine("===== Hardware / System Info =====")
+        appendLine("Brand: ${Build.BRAND}")
+        appendLine("Model: ${Build.MODEL}")
+        appendLine("Manufacturer: ${Build.MANUFACTURER}")
+        appendLine("Device: ${Build.DEVICE}")
+        appendLine("Hardware Platform: ${Build.HARDWARE}")
+        appendLine("Android Version: ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})")
+        appendLine("Security Patch: ${Build.VERSION.SECURITY_PATCH}")
+        appendLine("Supported ABIs: ${Build.SUPPORTED_ABIS.joinToString(", ")}")
+        appendLine("Kernel Version: ${System.getProperty("os.version")}")
+        appendLine("Host Package: ${context.packageName}")
     }
 }

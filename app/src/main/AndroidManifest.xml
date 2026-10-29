@@ -2,15 +2,23 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.VIBRATE"/>
+
+    <!-- 宿主版本 / 安装状态查询需要包可见性声明（targetSdk 30+） -->
+    <queries>
+        <package android:name="com.tencent.wetype" />
+        <package android:name="com.bytedance.android.doubaoime" />
+    </queries>
+
+    <!-- 模块没有 launcher Activity：设置页由输入法进程内的寄生 Activity 承载，
+         入口是宿主设置页注入的 FAB。模块名与描述来自 label / description。 -->
     <application
             android:allowBackup="true"
             android:icon="@mipmap/ic_launcher"
             android:dataExtractionRules="@xml/data_extraction_rules"
             android:fullBackupContent="@xml/backup_rules"
             android:label="@string/app_name"
+            android:description="@string/module_description"
             android:supportsRtl="true"
-            android:theme="@style/Theme.WeTypeHookR">
-
-    </application>
+            android:theme="@style/Theme.WeTypeHookR" />
 
 </manifest>
