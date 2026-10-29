@@ -1,4 +1,4 @@
-# WeTypeHookR（WeDouVibrator）开发文档
+# WeTypeHookR（TypeVibrator）开发文档
 
 > **文档定位**：目标架构与规范参考（v1.4）。实施步骤、阶段闸门、文件清单见 `TASK_HOST_SETTINGS_MIGRATION.md`。
 > **状态说明**：P0–P4 已完成并提交到 `dev`。配置即本文 §7 描述的单快照 `state.json`（kotlinx.serialization + `AtomicFile` + `FileObserver` 热更新，含旧三文件/`config.xml` 迁移）；设置页为宿主进程内的 `SettingsApp`（宿主切换只读查看、模块设置/调试/帮助/关于）；文案已全量资源化。剩余：真机回归（见 `HOST_NOTES.md`）与本文终稿校对。
@@ -13,7 +13,7 @@
 
 | 项 | 值 |
 | --- | --- |
-| 应用名 / 模块名 | WeDouVibrator |
+| 应用名 / 模块名 | TypeVibrator |
 | 包名 | `com.haostoo.wetypehookr` |
 | 目标宿主 | 微信输入法、豆包输入法（静态作用域） |
 | 框架要求 | LibXposed API 102（LSPosed 1.9.3+） |
@@ -390,8 +390,9 @@ miuix `TopAppBar` 提供 `title` / `subtitle`，但 `title` 是 `String`，无�
 
 ### 8.5 根级底栏与三个板块
 
-- 根级 `Scaffold.bottomBar` 挂三项浮动底栏（`首页 / 配置 / 设置`），选中项用 `primary` 着色，其余 `onSurfaceContainerVariant`；底栏自带 `navigationBarsPadding()`。
-- **首页**：宿主概览（显示名 / 包名 / 版本）、注入状态、模块概览（模块版本 / 框架 / 配置更新时间）。
+- 根级 `Scaffold.bottomBar` 使用 miuix `FloatingNavigationBar` + `FloatingNavigationBarItem`（`selected / onClick / icon / label`），不再自绘；它的 `defaultWindowInsetsPadding` 已处理导航栏安全区。
+- **首页**：框架连接状态卡（状态徽标 + 框架版本 + API 版本，未连接时给提示）、版本信息卡（应用 / 框架 / Android / 系统）、宿主概览（显示名 / 包名 / 版本）、注入状态卡。
+- 框架信息取自 `YukiHook.Status.Executor`（`name` / `version` / `apiVersion`），在 `loadApp` 内一次性写入 `HookRuntime`；取不到时保持 `unknown`，卡片显示「未连接」。
 - **配置**：按下与抬起震动（模式、系统风格、时长强度、波形）、恢复默认、重载输入法。
 - **设置**：颜色模式、配置导入导出、调试与日志、帮助、关于（仓库 / 酷安 / 频道 / 赞助二维码）。
 - 波形编辑、调试、帮助作为二级页占用整页并**隐藏底栏**，返回回到打开它的板块。

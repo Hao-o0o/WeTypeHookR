@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">震动设置</string>
+    <string name="app_name">TypeVibrator</string>
     <string name="module_description">为微信输入法 / 豆包输入法提供可自定义的双段触感反馈</string>
 
     <string name="action_back">返回</string>
@@ -130,7 +130,16 @@
     <string name="tab_settings">设置</string>
     <string name="title_module">模块</string>
     <string name="label_module_version">模块版本 %1$s</string>
-    <string name="label_framework">框架 %1$s</string>
-    <string name="framework_name">LibXposed API 102</string>
     <string name="title_about_author">关于作者</string>
+
+    <string name="title_framework_status">框架连接状态</string>
+    <string name="status_connected">已连接</string>
+    <string name="status_disconnected">未连接</string>
+    <string name="framework_unavailable_hint">暂时读不到框架信息，检查框架是否在运行后再试。</string>
+    <string name="title_version_info">版本信息</string>
+    <string name="label_app_version">应用版本</string>
+    <string name="label_framework_version">框架版本</string>
+    <string name="label_api_version">API 版本</string>
+    <string name="label_android_version">Android 版本</string>
+    <string name="label_system_version">系统版本</string>
 </resources>

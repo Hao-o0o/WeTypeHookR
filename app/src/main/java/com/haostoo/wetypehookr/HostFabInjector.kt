@@ -11,6 +11,7 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Toast
+import com.highcapable.yukihookapi.hook.factory.registerModuleActivities
 import kotlin.math.hypot
 import kotlin.math.min
 
@@ -150,6 +151,11 @@ object HostFabInjector {
 
     private fun launchSettings(activity: Activity) {
         runCatching {
+            // 模块 Activity 的注册是「每进程一次」的：withApplicationReady 只在首个进程回调，
+            // 输入法设置页若跑在别的进程（如豆包），点击时补一次注册，否则会 ActivityNotFound。
+            HostCatalog.settingsActivity(activity.packageName)?.let { proxy ->
+                activity.registerModuleActivities(proxy)
+            }
             activity.startActivity(android.content.Intent(activity, SettingsActivity::class.java))
         }.onFailure {
             Log.w(TAG, "launch SettingsActivity failed", it)

@@ -1,6 +1,7 @@
 package com.haostoo.wetypehookr
 
 import android.app.Activity
+import android.os.Build
 import android.widget.Toast
 import androidx.annotation.StringRes
 import androidx.compose.animation.AnimatedContent
@@ -11,9 +12,11 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -26,6 +29,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
@@ -53,6 +57,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Card
+import top.yukonga.miuix.kmp.basic.FloatingNavigationBar
+import top.yukonga.miuix.kmp.basic.FloatingNavigationBarItem
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.Slider
@@ -362,60 +368,17 @@ private fun SettingsScaffold(
     }
 }
 
-/** 根级浮动底栏：三个板块，选中项主色高亮。 */
+/** 根级浮动底栏：用 miuix 的 FloatingNavigationBar 承载三个板块。 */
 @Composable
 private fun SettingsBottomBar(selected: RootTab, onSelect: (RootTab) -> Unit) {
-    Surface(color = MiuixTheme.colorScheme.surface) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .navigationBarsPadding()
-                .padding(start = 32.dp, end = 32.dp, top = 6.dp, bottom = 10.dp),
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Surface(
-                color = MiuixTheme.colorScheme.secondaryContainer,
-                shape = RoundedCornerShape(22.dp),
-                modifier = Modifier.weight(1f),
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 6.dp),
-                    horizontalArrangement = Arrangement.spacedBy(2.dp),
-                ) {
-                    RootTab.entries.forEach { item ->
-                        val active = item == selected
-                        val tint = if (active) {
-                            MiuixTheme.colorScheme.primary
-                        } else {
-                            MiuixTheme.colorScheme.onSurfaceContainerVariant
-                        }
-                        Column(
-                            modifier = Modifier
-                                .weight(1f)
-                                .clip(RoundedCornerShape(16.dp))
-                                .clickable { onSelect(item) }
-                                .padding(vertical = 6.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                        ) {
-                            Icon(
-                                item.icon,
-                                stringResource(item.label),
-                                modifier = Modifier.size(22.dp),
-                                tint = tint,
-                            )
-                            Text(
-                                text = stringResource(item.label),
-                                fontSize = 11.sp,
-                                color = tint,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.padding(top = 2.dp),
-                            )
-                        }
-                    }
-                }
-            }
+    FloatingNavigationBar(color = MiuixTheme.colorScheme.surfaceContainer) {
+        RootTab.entries.forEach { item ->
+            FloatingNavigationBarItem(
+                selected = item == selected,
+                onClick = { onSelect(item) },
+                icon = item.icon,
+                label = stringResource(item.label),
+            )
         }
     }
 }
@@ -453,13 +416,16 @@ private fun HomeContent(
             return@Column
         }
 
+        FrameworkStatusCard()
+        Spacer(Modifier.height(CardGap))
+
+        VersionInfoCard()
+        Spacer(Modifier.height(CardGap))
+
         HostIdentityCard(host = host, hostVersion = hostVersion, readOnly = readOnly)
         Spacer(Modifier.height(CardGap))
 
         InjectionCard(hookStatus = if (readOnly) null else HookRuntime.status())
-        Spacer(Modifier.height(CardGap))
-
-        ModuleCard(state = state, readOnly = readOnly)
 
         Spacer(Modifier.height(CardGap))
         Spacer(Modifier.height(insets.calculateBottomPadding()))
@@ -641,40 +607,120 @@ private fun InjectionCard(hookStatus: SettingsModel.HookStatus?) {
     }
 }
 
-/** 模块概览：模块版本 / 框架 / 配置更新时间。 */
+/** 框架连接状态：状态徽标 + 框架名 / 版本 / API。 */
 @Composable
-private fun ModuleCard(state: SettingsModel.HostState?, readOnly: Boolean) {
+private fun FrameworkStatusCard() {
+    val connected = HookRuntime.frameworkApiVersion > 0 &&
+        HookRuntime.frameworkName != "unknown" &&
+        HookRuntime.frameworkName.isNotBlank()
+    val dotColor = if (connected) {
+        MiuixTheme.colorScheme.primary
+    } else {
+        MiuixTheme.colorScheme.onSurfaceContainerVariant
+    }
+
     Card(modifier = Modifier.fillMaxWidth(), insideMargin = PaddingValues(CardInset)) {
         Column(modifier = Modifier.padding(ContentPadding)) {
-            Text(
-                text = stringResource(R.string.title_module),
-                fontSize = 16.sp,
-                fontWeight = FontWeight.SemiBold,
-            )
-            Text(
-                text = stringResource(R.string.label_module_version, BuildConfig.VERSION_NAME),
-                fontSize = 13.sp,
-                color = MiuixTheme.colorScheme.onSurfaceContainerVariant,
-                modifier = Modifier.padding(top = 8.dp),
-            )
-            Text(
-                text = stringResource(R.string.label_framework, stringResource(R.string.framework_name)),
-                fontSize = 13.sp,
-                color = MiuixTheme.colorScheme.onSurfaceContainerVariant,
-                modifier = Modifier.padding(top = 2.dp),
-            )
-            if (!readOnly && state != null && state.updatedAt > 0L) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(
+                    text = stringResource(R.string.title_framework_status),
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.weight(1f),
+                )
+                Box(
+                    modifier = Modifier
+                        .padding(end = 6.dp)
+                        .size(8.dp)
+                        .background(dotColor, CircleShape),
+                )
                 Text(
                     text = stringResource(
-                        R.string.injection_ok_hint,
-                        HostInfo.formatTime(state.updatedAt),
+                        if (connected) R.string.status_connected else R.string.status_disconnected,
                     ),
+                    fontSize = 13.sp,
+                    color = dotColor,
+                )
+            }
+            InfoRow(
+                label = stringResource(R.string.label_framework_version),
+                value = HookRuntime.frameworkVersion,
+            )
+            InfoRow(
+                label = stringResource(R.string.label_api_version),
+                value = if (HookRuntime.frameworkApiVersion > 0) {
+                    HookRuntime.frameworkApiVersion.toString()
+                } else {
+                    stringResource(R.string.state_unknown)
+                },
+            )
+            if (!connected) {
+                Text(
+                    text = stringResource(R.string.framework_unavailable_hint),
                     fontSize = 12.sp,
                     color = MiuixTheme.colorScheme.onSurfaceContainerVariant,
-                    modifier = Modifier.padding(top = 2.dp),
+                    modifier = Modifier.padding(top = 8.dp),
                 )
             }
         }
+    }
+}
+
+/** 版本信息：应用 / 框架 / Android / 系统。 */
+@Composable
+private fun VersionInfoCard() {
+    Card(modifier = Modifier.fillMaxWidth(), insideMargin = PaddingValues(CardInset)) {
+        Column(modifier = Modifier.padding(ContentPadding)) {
+            Text(
+                text = stringResource(R.string.title_version_info),
+                fontSize = 16.sp,
+                fontWeight = FontWeight.SemiBold,
+            )
+            InfoRow(
+                label = stringResource(R.string.label_app_version),
+                value = BuildConfig.VERSION_NAME,
+            )
+            InfoRow(
+                label = stringResource(R.string.label_framework_version),
+                value = HookRuntime.frameworkVersion,
+            )
+            InfoRow(
+                label = stringResource(R.string.label_android_version),
+                value = "${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})",
+            )
+            InfoRow(
+                label = stringResource(R.string.label_system_version),
+                value = Build.DISPLAY ?: stringResource(R.string.state_unknown),
+            )
+        }
+    }
+}
+
+/** 一行「标签 / 取值」。 */
+@Composable
+private fun InfoRow(label: String, value: String) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = label,
+            fontSize = 13.sp,
+            color = MiuixTheme.colorScheme.onSurfaceContainerVariant,
+            modifier = Modifier.weight(1f),
+        )
+        Text(
+            text = value,
+            fontSize = 13.sp,
+            color = MiuixTheme.colorScheme.onSurface,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 

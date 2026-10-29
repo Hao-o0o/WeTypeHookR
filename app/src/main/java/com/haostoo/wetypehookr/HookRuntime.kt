@@ -23,6 +23,21 @@ object HookRuntime {
     var heartbeatAt: Long = 0L
         private set
 
+    /** 框架名称（LSPosed / EdXposed…），未取到时为 "unknown"。 */
+    @Volatile
+    var frameworkName: String = "unknown"
+        private set
+
+    /** 框架版本号。 */
+    @Volatile
+    var frameworkVersion: String = "unknown"
+        private set
+
+    /** 框架 API 版本。 */
+    @Volatile
+    var frameworkApiVersion: Int = -1
+        private set
+
     /** 已加载的宿主包名。 */
     @Volatile
     var hostPackage: String = ""
@@ -31,6 +46,13 @@ object HookRuntime {
     fun markLoaded(host: String) {
         hostPackage = host
         heartbeatAt = System.currentTimeMillis()
+    }
+
+    /** 记录当前框架信息；读取失败时保留上一次的值。 */
+    fun markFramework(name: String?, version: String?, apiVersion: Int) {
+        name?.takeIf { it.isNotBlank() }?.let { frameworkName = it }
+        version?.takeIf { it.isNotBlank() }?.let { frameworkVersion = it }
+        if (apiVersion > 0) frameworkApiVersion = apiVersion
     }
 
     fun markHook(installed: Boolean) {
@@ -44,7 +66,7 @@ object HookRuntime {
         return SettingsModel.HookStatus(
             hookInstalled = hookInstalled,
             moduleVersion = BuildConfig.VERSION_NAME,
-            frameworkName = null,
+            frameworkName = frameworkName,
             configUpdatedAt = configUpdatedAt,
             heartbeatAt = heartbeatAt,
         )

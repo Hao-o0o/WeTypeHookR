@@ -13,6 +13,7 @@
 > - P4 文案资源化：`c27b6e8`（`strings.xml` / `values-en` / `arrays.xml` 全量，`.kt` 中无中文字面量，闸门 grep 已通过）。
 > - **待做**：P5 的真机回归（§11 清单）与 `DEVELOPMENT_GUIDE.md` 终稿回写；`master` 未动。
 > - 追加（同日）：恢复根级三项底栏「首页 / 配置 / 设置」，关于并入设置板块，移除「导入旧配置」入口；卡片间距放大（页面 16dp、内容 20dp）。此项与原 §6 单页结构不同，以实际实现为准。
+> - 追加（同日二）：模块显示名改为 **TypeVibrator**；底栏改用 miuix `FloatingNavigationBar`；首页改为「框架连接状态 + 版本信息」两张卡（参考 LiquidVivo 的字段结构：应用/框架/Android/系统版本、未连接提示），框架版本改由 `YukiHook.Status.Executor` 读取；FAB 点击时补一次 `registerModuleActivities`，修复豆包设置页在非首进程、模块 Activity 未注册导致打不开的问题。
 
 ---
 

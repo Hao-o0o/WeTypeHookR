@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Vibration</string>
+    <string name="app_name">TypeVibrator</string>
     <string name="module_description">Custom two-stage haptic feedback for WeType and Doubao IME</string>
 
     <string name="action_back">Back</string>
@@ -130,7 +130,16 @@
     <string name="tab_settings">Settings</string>
     <string name="title_module">Module</string>
     <string name="label_module_version">Module %1$s</string>
-    <string name="label_framework">Framework %1$s</string>
-    <string name="framework_name">LibXposed API 102</string>
     <string name="title_about_author">About the author</string>
+
+    <string name="title_framework_status">Framework status</string>
+    <string name="status_connected">Connected</string>
+    <string name="status_disconnected">Not connected</string>
+    <string name="framework_unavailable_hint">Framework info unavailable; check that the framework is running</string>
+    <string name="title_version_info">Version info</string>
+    <string name="label_app_version">App version</string>
+    <string name="label_framework_version">Framework version</string>
+    <string name="label_api_version">API level</string>
+    <string name="label_android_version">Android version</string>
+    <string name="label_system_version">System version</string>
 </resources>

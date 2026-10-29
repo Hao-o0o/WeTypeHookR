@@ -9,6 +9,7 @@ import com.highcapable.yukihookapi.hook.factory.encase
 import com.highcapable.yukihookapi.hook.factory.registerModuleActivities
 import com.highcapable.yukihookapi.hook.param.PackageParam
 import com.highcapable.yukihookapi.hook.xposed.YukiHookXposedModule
+import com.highcapable.yukihookapi.YukiHook
 
 /**
  * 模块唯一入口。
@@ -30,6 +31,14 @@ object HookEntry : YukiHookXposedModule {
         HostCatalog.ALL.forEach { host ->
             loadApp(host) {
                 HookRuntime.markLoaded(host)
+                // 框架名 / 版本 / API 版本由 YukiHook 的运行时桥接读取，取不到时保持 unknown。
+                runCatching {
+                    HookRuntime.markFramework(
+                        name = YukiHook.Status.Executor.name,
+                        version = YukiHook.Status.Executor.version,
+                        apiVersion = YukiHook.Status.Executor.apiVersion,
+                    )
+                }
 
                 installTouchHooks()
                 appContext?.let { SettingsStore.attach(it, host) }
