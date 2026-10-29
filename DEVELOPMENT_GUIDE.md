@@ -388,7 +388,17 @@ fun update(context: Context, host: String, transform: (HostState) -> HostState):
 
 miuix `TopAppBar` 提供 `title` / `subtitle`，但 `title` 是 `String`，无法挂点击。宿主名需要在标题下方显示且整块可点，因此使用自写 `SettingsTopBar`（`Surface` + `Row` + 可点击 `Column`，内含主标题、副标题、指示箭头），高度 56dp，顶部 `statusBarsPadding()`。
 
-### 8.5 波形曲线
+### 8.5 根级底栏与三个板块
+
+- 根级 `Scaffold.bottomBar` 挂三项浮动底栏（`首页 / 配置 / 设置`），选中项用 `primary` 着色，其余 `onSurfaceContainerVariant`；底栏自带 `navigationBarsPadding()`。
+- **首页**：宿主概览（显示名 / 包名 / 版本）、注入状态、模块概览（模块版本 / 框架 / 配置更新时间）。
+- **配置**：按下与抬起震动（模式、系统风格、时长强度、波形）、恢复默认、重载输入法。
+- **设置**：颜色模式、配置导入导出、调试与日志、帮助、关于（仓库 / 酷安 / 频道 / 赞助二维码）。
+- 波形编辑、调试、帮助作为二级页占用整页并**隐藏底栏**，返回回到打开它的板块。
+- 间距体系：页面水平 `16dp`；卡片 `insideMargin = PaddingValues(4.dp)`，自定义内容再用 `16dp`（合计 20dp，与 preference 行内边距对齐）；卡片间距 `12dp`。
+- 底栏与二级页切换都用 `AnimatedContent`；页面本身不使用 `nestedScroll`（自绘顶栏不折叠，接了会把纵向手势吃掉）。
+
+### 8.6 波形曲线
 
 - `Canvas` 绘制，PCHIP 单调三次插值，保证不过冲。
 - x 轴为累计时长（总时长为 0 时退化为等距），y 为 `1 - 振幅/255`。
