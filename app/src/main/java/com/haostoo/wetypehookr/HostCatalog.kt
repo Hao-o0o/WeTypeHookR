@@ -198,6 +198,21 @@ object HostCatalog {
 
     fun touchTarget(host: String): Pair<String, String>? = TOUCH_TARGET[familyOf(host)]
 
+    /**
+     * 宿主的按键处理里自己会震动，且会把我们发出的长波形顶掉。
+     *
+     * 实测：
+     * - 微信输入法 `com.tencent.wetype.plugin.hld.vibrate.i`（NormalVibrate）
+     *   调 `vibrate(createOneShot(25ms, 172))`；默认配置下还会走
+     *   `View.performHapticFeedback(3, 3)`（经 WindowManager 异步下发）；
+     * - Gboard `defpackage.pun#f(int)` 调
+     *   `vibrate(createOneShot(duration, -1), VibrationAttributes.createForUsage(18))`。
+     *
+     * 这两家的震动排在我们之后，会把自定义时长 / 波形替换成一下短震，
+     * 所以它们的触发要延后到宿主之后；豆包与讯飞不在此列，保持零延迟。
+     */
+    fun defersHaptic(host: String): Boolean = familyOf(host) in setOf(WETYPE, GBOARD)
+
     /** 宿主显示名的资源（家族级）。 */
     fun labelRes(host: String): Int = when (familyOf(host)) {
         WETYPE -> R.string.host_name_wetype

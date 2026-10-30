@@ -31,8 +31,15 @@ object HapticEngine {
      * 其它事件直接忽略，不介入宿主原有点击逻辑。
      */
     fun dispatch(view: View, event: android.view.MotionEvent) {
+        dispatchAction(view, event.actionMasked)
+    }
+
+    /**
+     * 按「动作码」触发，供需要延迟调用时使用（宿主回收 MotionEvent 后不能再持有它）。
+     */
+    fun dispatchAction(view: View, action: Int) {
         val settings = cachedSettings
-        when (event.actionMasked) {
+        when (action) {
             android.view.MotionEvent.ACTION_DOWN,
             android.view.MotionEvent.ACTION_POINTER_DOWN,
             -> triggerHapticPreview(
@@ -58,6 +65,20 @@ object HapticEngine {
             )
         }
     }
+
+    /**
+     * 宿主按键处理结束之后再震动（带一点点延迟）。
+     *
+     * 微信输入法与 Gboard 都在自己的按键处理里调 `vibrator.vibrate(createOneShot(~25ms))`，
+     * 微信默认走的是 `View.performHapticFeedback`（经 WindowManager 异步下发），
+     * 两者都会把先发出的长波形顶掉 —— 表现就是自定义时长/波形被压成一下短震。
+     * 所以这里让我们的震动排到它们之后。
+     */
+    fun dispatchAfterHost(view: View, action: Int, delayMs: Long = 24L) {
+        mainHandler.postDelayed({ dispatchAction(view, action) }, delayMs)
+    }
+
+    private val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
 
     /**
      * 震动预览（设置页测试按钮 / 宿主按键触发共用）。
