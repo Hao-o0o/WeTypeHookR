@@ -80,6 +80,8 @@ object HookEntry : YukiHookXposedModule {
                 HostDiag.installCrashHandler(app)
                 SettingsStore.attach(app, host)
                 registerActivities(app, host)
+                // 临时诊断：记录进程内每一次 vibrate / cancel，查清自定义震动为何变弱。
+                VibratorProbe.run { installVibratorProbe(app) }
             }
 
             installFabHook()

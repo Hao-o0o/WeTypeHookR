@@ -83,19 +83,23 @@ object HapticEngine {
             )
         }
         when (modeIndex) {
-            1 -> view.performHapticFeedback(hapticConstantForIndex(systemIndex))
+            1 -> VibratorProbe.trace {
+                view.performHapticFeedback(hapticConstantForIndex(systemIndex))
+            }
             2 -> {
                 if (!vibrator.hasVibrator()) return
                 if (android.os.Build.VERSION.SDK_INT >= 26) {
-                    vibrator.vibrate(
-                        android.os.VibrationEffect.createOneShot(
-                            duration.toLong(),
-                            (strength * 255).toInt().coerceIn(1, 255),
-                        ),
-                    )
+                    VibratorProbe.trace {
+                        vibrator.vibrate(
+                            android.os.VibrationEffect.createOneShot(
+                                duration.toLong(),
+                                (strength * 255).toInt().coerceIn(1, 255),
+                            ),
+                        )
+                    }
                 } else {
                     @Suppress("DEPRECATION")
-                    vibrator.vibrate(duration.toLong())
+                    VibratorProbe.trace { vibrator.vibrate(duration.toLong()) }
                 }
             }
             3 -> {
@@ -104,13 +108,15 @@ object HapticEngine {
                     val w = waveform
                         ?: if (isDown) cachedCustomHaptic?.down else cachedCustomHaptic?.up
                     w?.let {
-                        vibrator.vibrate(
-                            android.os.VibrationEffect.createWaveform(
-                                it.timings.toLongArray(),
-                                it.amplitudes.toIntArray(),
-                                -1,
-                            ),
-                        )
+                        VibratorProbe.trace {
+                            vibrator.vibrate(
+                                android.os.VibrationEffect.createWaveform(
+                                    it.timings.toLongArray(),
+                                    it.amplitudes.toIntArray(),
+                                    -1,
+                                ),
+                            )
+                        }
                     }
                 }
             }

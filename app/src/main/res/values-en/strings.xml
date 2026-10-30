@@ -13,6 +13,12 @@
     <string name="action_reload_ime">Reload IME</string>
     <string name="action_export_config">Export config</string>
     <string name="action_import_config">Import config</string>
+    <string name="title_haptic_probe">Haptic probe</string>
+    <string name="summary_haptic_probe">Plays the same 200ms effect four ways and logs to diag.log</string>
+    <string name="action_probe_raw">Raw vibrate (current)</string>
+    <string name="action_probe_touch">USAGE_TOUCH</string>
+    <string name="action_probe_hardware">USAGE_HARDWARE_FEEDBACK</string>
+    <string name="action_probe_haptic">performHapticFeedback</string>
     <string name="action_export_logs">Export logs</string>
     <string name="action_clear_logs">Clear logs</string>
     <string name="action_save_image">Save image</string>

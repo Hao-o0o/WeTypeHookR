@@ -31,6 +31,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringArrayResource
 import androidx.compose.ui.res.stringResource
@@ -372,6 +373,37 @@ fun DebugPage(
                 title = stringResource(R.string.action_export_logs),
                 summary = stringResource(R.string.summary_export_logs),
                 onClick = { exportLauncher.launch("wedouvibrator-logs.zip") },
+            )
+        }
+        Spacer(Modifier.height(CardGap))
+
+        // 临时诊断卡：同一段 200ms 波形用四种方式各播一次，结果写 diag.log。
+        val probeView = LocalView.current
+        Card(modifier = Modifier.fillMaxWidth(), insideMargin = PaddingValues(CardInset)) {
+            ArrowPreference(
+                title = stringResource(R.string.title_haptic_probe),
+                summary = stringResource(R.string.summary_haptic_probe),
+                onClick = { VibratorProbe.play(probeView, VibratorProbe.Variant.RAW) },
+            )
+            ArrowPreference(
+                title = stringResource(R.string.action_probe_raw),
+                summary = "vibrate(createOneShot(200, 255))",
+                onClick = { VibratorProbe.play(probeView, VibratorProbe.Variant.RAW) },
+            )
+            ArrowPreference(
+                title = stringResource(R.string.action_probe_touch),
+                summary = "createForUsage(USAGE_TOUCH)",
+                onClick = { VibratorProbe.play(probeView, VibratorProbe.Variant.TOUCH) },
+            )
+            ArrowPreference(
+                title = stringResource(R.string.action_probe_hardware),
+                summary = "createForUsage(USAGE_HARDWARE_FEEDBACK)",
+                onClick = { VibratorProbe.play(probeView, VibratorProbe.Variant.HARDWARE) },
+            )
+            ArrowPreference(
+                title = stringResource(R.string.action_probe_haptic),
+                summary = "performHapticFeedback(KEYBOARD_TAP)",
+                onClick = { VibratorProbe.play(probeView, VibratorProbe.Variant.HAPTIC) },
             )
         }
         Spacer(Modifier.height(CardGap))
