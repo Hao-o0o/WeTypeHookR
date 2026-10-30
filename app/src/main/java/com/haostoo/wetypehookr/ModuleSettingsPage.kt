@@ -13,12 +13,14 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -42,7 +44,9 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.Icon
+import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Text
+import top.yukonga.miuix.kmp.basic.TextButton
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Help
 import top.yukonga.miuix.kmp.icon.extended.Import
@@ -51,6 +55,7 @@ import top.yukonga.miuix.kmp.icon.extended.Theme
 import top.yukonga.miuix.kmp.icon.extended.UploadCloud
 import top.yukonga.miuix.kmp.overlay.OverlayDialog
 import top.yukonga.miuix.kmp.preference.ArrowPreference
+import top.yukonga.miuix.kmp.preference.CheckboxPreference
 import top.yukonga.miuix.kmp.preference.OverlayDropdownPreference
 import top.yukonga.miuix.kmp.preference.SwitchPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
@@ -83,15 +88,28 @@ fun SettingsContent(
 
     var showSponsor by remember { mutableStateOf(false) }
 
+    // 导入 / 导出前先选宿主：文件里只有震动参数，宿主由用户指定。
+    val primaryHost = context.packageName
+    var transferKind by remember { mutableStateOf<TransferKind?>(null) }
+    var transferHost by remember { mutableStateOf(primaryHost) }
+    var pendingExportHost by remember { mutableStateOf<String?>(null) }
+    var pendingImportHost by remember { mutableStateOf<String?>(null) }
+    val noAccessText = stringResource(R.string.toast_transfer_no_access)
+
     val exportLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/json"),
     ) { uri: Uri? ->
-        if (uri == null) return@rememberLauncherForActivityResult
+        val host = pendingExportHost
+        pendingExportHost = null
+        if (uri == null || host == null) return@rememberLauncherForActivityResult
         scope.launch {
             val ok = withContext(Dispatchers.IO) {
+                val state = ConfigTransfer.loadState(context, host, primaryHost)
+                    ?: return@withContext false
+                val json = ConfigTransfer.exportJson(state)
                 runCatching {
                     context.contentResolver.openOutputStream(uri)?.use {
-                        it.write(ConfigTransfer.exportJson(context).toByteArray(Charsets.UTF_8))
+                        it.write(json.toByteArray(Charsets.UTF_8))
                     }
                 }.isSuccess
             }
@@ -102,15 +120,24 @@ fun SettingsContent(
     val importLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument(),
     ) { uri: Uri? ->
-        if (uri == null) return@rememberLauncherForActivityResult
+        val host = pendingImportHost
+        pendingImportHost = null
+        if (uri == null || host == null) return@rememberLauncherForActivityResult
         scope.launch {
             val text = withContext(Dispatchers.IO) {
                 runCatching {
                     context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
                 }.getOrNull()
             }
-            val ok = text != null && withContext(Dispatchers.IO) { ConfigTransfer.importJson(context, text) }
-            Toast.makeText(context, if (ok) importedText else badFormat, Toast.LENGTH_SHORT).show()
+            val payload = text?.let { ConfigTransfer.parse(it) }
+            if (payload == null) {
+                Toast.makeText(context, badFormat, Toast.LENGTH_SHORT).show()
+                return@launch
+            }
+            val ok = withContext(Dispatchers.IO) {
+                ConfigTransfer.apply(context, host, primaryHost, payload)
+            }
+            Toast.makeText(context, if (ok) importedText else noAccessText, Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -163,7 +190,10 @@ fun SettingsContent(
                         tint = MiuixTheme.colorScheme.primary,
                     )
                 },
-                onClick = { importLauncher.launch(arrayOf("application/json", "text/plain")) },
+                onClick = {
+                    transferHost = primaryHost
+                    transferKind = TransferKind.Import
+                },
             )
             ArrowPreference(
                 title = stringResource(R.string.action_export_config),
@@ -177,7 +207,10 @@ fun SettingsContent(
                         tint = MiuixTheme.colorScheme.primary,
                     )
                 },
-                onClick = { exportLauncher.launch("wedouvibrator-config.json") },
+                onClick = {
+                    transferHost = primaryHost
+                    transferKind = TransferKind.Export
+                },
             )
             ArrowPreference(
                 title = stringResource(R.string.title_debug_logs),
@@ -218,14 +251,12 @@ fun SettingsContent(
             )
             ArrowPreference(
                 title = stringResource(R.string.title_coolapk),
-                summary = AboutLinks.COOLAPK
-                    ?: stringResource(R.string.link_unavailable),
+                summary = AboutLinks.COOLAPK,
                 onClick = { openLink(context, AboutLinks.COOLAPK) },
             )
             ArrowPreference(
                 title = stringResource(R.string.title_channel),
-                summary = AboutLinks.CHANNEL
-                    ?: stringResource(R.string.link_unavailable),
+                summary = AboutLinks.CHANNEL,
                 onClick = { openLink(context, AboutLinks.CHANNEL) },
             )
             ArrowPreference(
@@ -236,6 +267,28 @@ fun SettingsContent(
 
         Spacer(Modifier.height(CardGap))
         Spacer(Modifier.height(insets.calculateBottomPadding()))
+
+        transferKind?.let { kind ->
+            HostTransferDialog(
+                kind = kind,
+                current = transferHost,
+                onSelect = { transferHost = it },
+                onDismiss = { transferKind = null },
+                onConfirm = {
+                    transferKind = null
+                    when (kind) {
+                        TransferKind.Export -> {
+                            pendingExportHost = transferHost
+                            exportLauncher.launch(ConfigTransfer.suggestedFileName())
+                        }
+                        TransferKind.Import -> {
+                            pendingImportHost = transferHost
+                            importLauncher.launch(arrayOf("application/json", "text/plain"))
+                        }
+                    }
+                },
+            )
+        }
     }
 
     if (showSponsor) {
@@ -413,15 +466,75 @@ fun HelpPage(insets: PaddingValues) {
     }
 }
 
+/** 配置搬运方向。 */
+private enum class TransferKind { Export, Import }
+
+/**
+ * 导入 / 导出的宿主选择弹窗。
+ *
+ * 用 CheckboxPreference 做成单选（勾一个自动取消其它），底部两个按钮确认或取消；
+ * 文件本身只带震动参数，所以同一份文件可以在任意宿主之间来回搬。
+ */
+@Composable
+private fun HostTransferDialog(
+    kind: TransferKind,
+    current: String,
+    onSelect: (String) -> Unit,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit,
+) {
+    val context = LocalContext.current
+    OverlayDialog(
+        title = stringResource(
+            if (kind == TransferKind.Export) R.string.transfer_export_title
+            else R.string.transfer_import_title,
+        ),
+        summary = stringResource(
+            if (kind == TransferKind.Export) R.string.transfer_pick_host_export
+            else R.string.transfer_pick_host_import,
+        ),
+        show = true,
+        onDismissRequest = onDismiss,
+    ) {
+        Column {
+            HostCatalog.ALL.forEach { host ->
+                CheckboxPreference(
+                    title = HostCatalog.displayName(context, host),
+                    checked = host == current,
+                    onCheckedChange = { onSelect(host) },
+                )
+            }
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 8.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                TextButton(
+                    text = stringResource(R.string.action_cancel),
+                    onClick = onDismiss,
+                    modifier = Modifier.weight(1f),
+                )
+                Spacer(Modifier.width(16.dp))
+                TextButton(
+                    text = stringResource(R.string.action_confirm),
+                    onClick = onConfirm,
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.textButtonColorsPrimary(),
+                )
+            }
+        }
+    }
+}
+
 /** 作者相关外链与赞助图落盘。 */
 private object AboutLinks {
 
     const val REPO: String = "https://github.com/Hao-o0o/WeTypeHookR"
 
-    /** 待补充时保持 null，页面会显示占位文案。 */
-    val COOLAPK: String? = null
+    const val COOLAPK: String = "https://www.coolapk.com/u/19859750"
 
-    val CHANNEL: String? = null
+    const val CHANNEL: String = "https://t.me/imevibrator"
 
     private const val ALBUM_DIR = "Pictures/WeDouVibrator"
 

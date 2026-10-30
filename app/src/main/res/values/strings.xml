@@ -105,6 +105,11 @@
     <string name="toast_config_imported">配置已导入</string>
     <string name="toast_read_file_failed">读取文件失败</string>
     <string name="error_import_format">导入失败：文件格式不正确</string>
+    <string name="transfer_export_title">导出配置</string>
+    <string name="transfer_import_title">导入配置</string>
+    <string name="transfer_pick_host_export">选择要导出的宿主</string>
+    <string name="transfer_pick_host_import">选择要导入到的宿主</string>
+    <string name="toast_transfer_no_access">无法写入该宿主，请授予 root 权限后重试</string>
     <string name="summary_export_config">导出当前宿主设置与波形（JSON）</string>
     <string name="summary_import_config">从 JSON 恢复当前宿主设置与波形</string>
 
