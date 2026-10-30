@@ -40,8 +40,8 @@ android {
         applicationId = "com.haostoo.wetypehookr"
         minSdk = 33
         targetSdk = 35
-        versionCode = 1602
-        versionName = "1.6.2"
+        versionCode = 1603
+        versionName = "1.6.3"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

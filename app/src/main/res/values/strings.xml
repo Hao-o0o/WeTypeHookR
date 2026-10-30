@@ -13,12 +13,6 @@
     <string name="action_reload_ime">重载输入法</string>
     <string name="action_export_config">导出配置</string>
     <string name="action_import_config">导入配置</string>
-    <string name="title_haptic_probe">震动诊断</string>
-    <string name="summary_haptic_probe">同一段 200ms 波形用四种方式各播一次，结果写入 diag.log；用于定位自定义震动变弱的原因</string>
-    <string name="action_probe_raw">裸调用（当前实现）</string>
-    <string name="action_probe_touch">USAGE_TOUCH</string>
-    <string name="action_probe_hardware">USAGE_HARDWARE_FEEDBACK</string>
-    <string name="action_probe_haptic">performHapticFeedback</string>
     <string name="action_export_logs">导出日志</string>
     <string name="action_clear_logs">清除日志</string>
     <string name="action_save_image">保存图片</string>
