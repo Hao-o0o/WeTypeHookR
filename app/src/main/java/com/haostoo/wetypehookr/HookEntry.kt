@@ -105,27 +105,16 @@ object HookEntry : YukiHookXposedModule {
     private fun PackageParam.installTouchHooks() {
         val (className, methodName) = HostCatalog.touchTarget(packageName) ?: return
         val target = "$className#$methodName"
-        val deferHaptic = HostCatalog.defersHaptic(packageName)
 
         val installed = loaders().any { loader ->
             runCatching {
                 val method = Class.forName(className, false, loader)
                     .getDeclaredMethod(methodName, MotionEvent::class.java)
                 method.hook {
-                    // 必须在 super 之后再震动：微信输入法与 Gboard 在自己的按键处理里也会调
-                    // vibrator.vibrate(createOneShot(~25ms))（微信默认还走 performHapticFeedback，
-                    // 经 WindowManager 异步下发），系统侧「后来的震动替换前一个」，
-                    // 放在 before 里我们那 200ms/自定义波形会被顶掉，听起来就是「变弱/不完整」。
-                    after {
-                        val view = instanceOrNull as? View ?: return@after
-                        val action = (args.getOrNull(0) as? MotionEvent)?.actionMasked ?: return@after
-                        // MotionEvent 在 dispatch 返回后会被宿主回收，这里只传动作码。
-                        if (deferHaptic) {
-                            // 宿主自己会震动且排在我们之后，再让 24ms 给它，保证我们是最后一次震动。
-                            HapticEngine.dispatchAfterHost(view, action)
-                        } else {
-                            HapticEngine.dispatchAction(view, action)
-                        }
+                    before {
+                        val view = instanceOrNull as? View ?: return@before
+                        val event = args.getOrNull(0) as? MotionEvent ?: return@before
+                        HapticEngine.dispatch(view, event)
                     }
                 }
                 true
