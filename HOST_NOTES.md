@@ -73,6 +73,53 @@ adb logcat -c && adb logcat -s WETYPE_FAB WETYPE_HOOK WETYPE_UI
 
 讯飞定制版（`.oem` / `.miui`）不在静态 `scope` 里，需用户在 LSPosed 手动勾选；勾选后 `isSupported` 的前缀匹配生效。
 
+## 2.2 系统级输入法震动接管（vivo OriginOS）
+
+本机（Android 16 / OriginOS）的 `android.os.vibrator.SystemVibratorExtension` 内置了一份输入法白名单：
+
+```java
+VIBRATOR_IME_LIST = { OCTOPUS, BAIDU, QQ_PINYIN, IFLYTEK, LATIN, SOUXIN,
+                      FACEMOJI, SWIFT, KK, WEIXIN, BAIDU_CUSTOM }
+// WEIXIN = com.tencent.wetype
+// LATIN  = com.google.android.inputmethod.latin
+```
+
+`SystemVibrator.vibrate(uid, opPkg, effect, reason, attributes)` 在 `IS_LINEAR_MOTOR` 为真时：
+
+```java
+int id = SystemVibratorExtension.inputMethodCastToEffectID(opPkg, effect);
+if (id > 0) {
+    vibratorPro(id, -1L, 2);   // 141~150 号内置效果
+    return;                    // 我们的 effect 与 attributes 全部作废
+}
+```
+
+判定条件：`effect instanceof VibrationEffect.Composed && VIBRATOR_IME_LIST.contains(opPkg)`，
+命中后按 `inputMethodTimeToId()` 把时长映射成 141~150 号内置效果。
+
+由此产生的结果：
+
+- 名单内的输入法（微信、Gboard、讯飞、搜狗、百度…）发自定义 `Composed` 震动时，
+  时长与波形被替换成 vivo 内置短效果，表现为「自定义震动被压成一下弱震」；
+  转换发生在 `attributes` 被使用之前，**改 usage 无效**。
+- `com.bytedance.android.doubaoime` **不在**名单内，震动原样下发，所以豆包正常。
+- 「系统预设」走 `performHapticFeedback`，不经过该分支，始终正常。
+- 能绕过判定的类型只有 `RichTapVibrationEffect` 的 `PatternHe` / `PatternHeParameter` /
+  `ExtPrebaked`，均为 RichTap 私有格式（`createPatternHeWithParam` 要求 17 个 int、
+  首位 4096/4097），没有 SDK 构造不出来；`Prebaked` 等其它类型在线性马达设备上会被直接丢弃。
+- **结论：标准 API 无法绕过，属系统级限制。**
+
+验证命令与判据：
+
+```bash
+adb shell dumpsys vibrator_manager | grep -B2 -A3 "com.tencent.wetype"
+```
+
+| 场景 | usage | played |
+| --- | --- | --- |
+| 名单内（微信 / Gboard） | `TOUCH` | `Stereo{vibrator(id=0): null}` |
+| 名单外（豆包 / 讯飞不转换时） | `UNKNOWN` | `Step=200ms(amplitude=1.00)` |
+
 ## 3. 已知差异
 
 - 跨宿主数据目录不可互访：设置页只能读写自己所在宿主的 `<host>/files/haostoo/`。
