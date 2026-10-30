@@ -1,7 +1,7 @@
 # 开发任务书：设置页运行于宿主进程（YukiHook 底座）
 
 > **文档性质**：可直接执行的施工文档，面向对本项目 0 了解的执行代理。
-> **当前版本**：`1.3.0 (1300)`　·　**分支**：`dev`
+> **当前版本**：`1.4.0 (1400)`　·　**分支**：`dev`（`master` 已合并）
 > **技术底座**：YukiHook（`yukihook-core` + `yukihook-runtime-libxposed` + `yukihook-compiler`）跑在 LibXposed API 102 之上
 > **配套文档**：`DEVELOPMENT_GUIDE.md`（架构与规范参考）。两者冲突时以本文为准。
 
@@ -11,7 +11,7 @@
 > - P2 设置页：`6a9379a` + `c27b6e8`（宿主内 `SettingsActivity`、顶栏两行可点、宿主选择弹层、非本宿主只读态）。
 > - P3 模块设置与调试页：`c27b6e8`（颜色模式、导入导出、导入旧配置、调试日志、帮助、关于/赞助）。
 > - P4 文案资源化：`c27b6e8`（`strings.xml` / `values-en` / `arrays.xml` 全量，`.kt` 中无中文字面量，闸门 grep 已通过）。
-> - **待做**：P5 的真机回归（§11 清单）与 `DEVELOPMENT_GUIDE.md` 终稿回写；`master` 未动。
+> - **P5 已完成（2026-10-30 真机验证通过）**：两个宿主的 FAB 注入、点击打开设置页、配置热更新、热重载均实测可用；`master` 已合入（`b249c13`，版本 `1.4.0 (1400)`）。豆包侧最终用 `LauncherActivity` 作 proxy，原因见 `HOST_NOTES.md` §1。
 > - 追加（同日）：恢复根级三项底栏「首页 / 配置 / 设置」，关于并入设置板块，移除「导入旧配置」入口；卡片间距放大（页面 16dp、内容 20dp）。此项与原 §6 单页结构不同，以实际实现为准。
 > - 追加（同日二）：模块显示名改为 **TypeVibrator**；底栏改用 miuix `FloatingNavigationBar`；首页改为「框架连接状态 + 版本信息」两张卡（参考 LiquidVivo 的字段结构：应用/框架/Android/系统版本、未连接提示），框架版本改由 `YukiHook.Status.Executor` 读取；FAB 点击时补一次 `registerModuleActivities`，修复豆包设置页在非首进程、模块 Activity 未注册导致打不开的问题。
 

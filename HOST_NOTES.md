@@ -9,8 +9,8 @@
 
 | 宿主 | proxy | launchMode | 结论 |
 | --- | --- | --- | --- |
-| `com.tencent.wetype` | `com.tencent.wetype.plugin.hld.reactnative.activity.ImeMainSettingActivity` | 待验证 | 可打开（实测） |
-| `com.bytedance.android.doubaoime` | `com.bytedance.android.doubaoime.activity.LauncherActivity` | 待验证 | 可打开（实测） |
+| `com.tencent.wetype` | `com.tencent.wetype.plugin.hld.reactnative.activity.ImeMainSettingActivity` | 待验证 | 可打开（2026-10-30 实测） |
+| `com.bytedance.android.doubaoime` | `com.bytedance.android.doubaoime.activity.LauncherActivity` | 待验证 | 可打开（2026-10-30 实测） |
 
 豆包为什么不用 `SettingsActivityNext`（实测踩过的坑）：
 
@@ -55,8 +55,8 @@ adb logcat -c && adb logcat -s WETYPE_FAB WETYPE_HOOK WETYPE_UI
 
 | 宿主 | 类 | 方法 | 结论 |
 | --- | --- | --- | --- |
-| `com.tencent.wetype` | `com.tencent.wetype.plugin.hld.view.ImeRootView` | `dispatchTouchEvent` | 沿用 1.3.0，待回归 |
-| `com.bytedance.android.doubaoime` | `com.bytedance.android.input.keyboard.KeyboardView` | `onTouchEvent` | 沿用 1.3.0，待回归 |
+| `com.tencent.wetype` | `com.tencent.wetype.plugin.hld.view.ImeRootView` | `dispatchTouchEvent` | 沿用，2026-10-30 实测有震动 |
+| `com.bytedance.android.doubaoime` | `com.bytedance.android.input.keyboard.KeyboardView` | `onTouchEvent` | 沿用，2026-10-30 实测有震动 |
 
 日志验证：`adb logcat -s WETYPE_HOOK` 应出现 `hook installed: <类>#<方法>@<宿主>`。
 
