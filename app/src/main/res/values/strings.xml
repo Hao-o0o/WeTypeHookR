@@ -22,6 +22,8 @@
     <string name="host_version">版本 %1$s</string>
     <string name="host_name_wetype">微信输入法</string>
     <string name="host_name_doubao">豆包输入法</string>
+    <string name="host_name_iflytek">讯飞输入法</string>
+    <string name="host_name_gboard">Gboard</string>
     <string name="host_picker_title">选择宿主</string>
     <string name="host_no_access_hint">无法读取该宿主配置（不同应用的数据目录不可互访），当前仅供查看</string>
 

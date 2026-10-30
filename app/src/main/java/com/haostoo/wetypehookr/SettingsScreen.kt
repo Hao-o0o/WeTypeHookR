@@ -226,7 +226,7 @@ private fun SettingsScaffold(
     Scaffold(
         topBar = {
             SettingsTopBar(
-                subtitle = stringResource(HostCatalog.labelRes(host)),
+                subtitle = HostCatalog.displayName(context, host),
                 onBack = {
                     if (overlay == null) {
                         onBack()
@@ -522,10 +522,11 @@ private fun ConfigContent(
 
 @Composable
 private fun HostIdentityCard(host: String, hostVersion: String?, readOnly: Boolean) {
+    val context = LocalContext.current
     Card(modifier = Modifier.fillMaxWidth(), insideMargin = PaddingValues(CardInset)) {
         Column(modifier = Modifier.padding(ContentPadding)) {
             Text(
-                text = stringResource(HostCatalog.labelRes(host)),
+                text = HostCatalog.displayName(context, host),
                 fontSize = 16.sp,
                 fontWeight = FontWeight.SemiBold,
             )
@@ -952,8 +953,9 @@ private fun HostPickerDialog(
         onDismissRequest = onDismiss,
     ) {
         Column {
+            val context = LocalContext.current
             HostCatalog.ALL.forEach { host ->
-                val label = stringResource(HostCatalog.labelRes(host))
+                val label = HostCatalog.displayName(context, host)
                 ArrowPreference(
                     title = if (host == current) "✓ $label" else label,
                     summary = if (host == primaryHost) {
