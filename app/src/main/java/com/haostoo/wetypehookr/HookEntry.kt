@@ -70,13 +70,15 @@ object HookEntry : YukiHookXposedModule {
                 )
             }
 
-            // 崩溃留证：宿主进程里模块导致的未捕获异常写进 diag.log（logcat 会轮转丢失）。
-            hostApplication?.let { HostDiag.installCrashHandler(it) }
-
             installTouchHooks()
-            hostApplication?.let { SettingsStore.attach(it, host) }
 
+            // 需要 Context 的一切都必须放进 withApplicationReady：
+            // `onHook` 在 Application 创建之前跑，此时 `hostApplication` 是 null，
+            // 直接 `hostApplication?.let { … }` 会在冷启动时被静默跳过 —— 配置就读不到了。
             withApplicationReady { app ->
+                // 崩溃留证：宿主进程里模块导致的未捕获异常写进 diag.log（logcat 会轮转丢失）。
+                HostDiag.installCrashHandler(app)
+                SettingsStore.attach(app, host)
                 registerActivities(app, host)
             }
 

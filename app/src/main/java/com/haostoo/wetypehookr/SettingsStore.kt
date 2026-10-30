@@ -57,8 +57,14 @@ object SettingsStore {
         appContext = context.applicationContext
         watchedHost = host
 
-        apply(readOrMigrate(context, host))
+        val loaded = readOrMigrate(context, host)
+        apply(loaded)
         startWatching(context, host)
+        HostDiag.log(
+            context,
+            "CFG",
+            "attach host=$host bytes=${HostPaths.state(context).length()} at=${loaded.updatedAt}",
+        )
     }
 
     /** 热重载前释放：停掉文件监听与去抖，下次 attach 重新挂。 */
