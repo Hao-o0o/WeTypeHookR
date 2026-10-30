@@ -1,6 +1,7 @@
 # 项目排除路径
 /.gradle/
 /app/build/
+/build/
 /.git/
 gradle.properties
 .idea
@@ -8,3 +9,6 @@ release.jks
 *.hprof
 .kotlin/
 
+# 本地临时产物 / 调试截图
+.dsh_*
+local.properties

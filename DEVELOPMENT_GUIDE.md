@@ -1,7 +1,7 @@
 # WeTypeHookR（TypeVibrator）开发文档
 
 > **文档定位**：目标架构与规范参考（v1.4）。实施步骤、阶段闸门、文件清单见 `TASK_HOST_SETTINGS_MIGRATION.md`。
-> **状态说明**：P0–P4 已完成并提交到 `dev`。配置即本文 §7 描述的单快照 `state.json`（kotlinx.serialization + `AtomicFile` + `FileObserver` 热更新，含旧三文件/`config.xml` 迁移）；设置页为宿主进程内的 `SettingsApp`（宿主切换只读查看、模块设置/调试/帮助/关于）；文案已全量资源化。剩余：真机回归（见 `HOST_NOTES.md`）与本文终稿校对。
+> **状态说明**：P0–P5 全部完成，`1.4.0 (1400)` 已并入 `master`。配置即本文 §7 描述的单快照 `state.json`（kotlinx.serialization + `AtomicFile` + `FileObserver` 热更新，含旧三文件/`config.xml` 迁移）；设置页为宿主进程内的 `SettingsApp`（根级三板块 首页/配置/设置，含调试/帮助/关于）；文案已全量资源化；真机回归通过，宿主差异与踩坑记录在 `HOST_NOTES.md`。
 > **技术底座**：LibXposed API 102 + YukiHook 1.5.0 + Miuix 0.9.3 + Compose。
 > 历史交接类文档（`HANDOFF.md`、`API102_MIGRATION_GUIDE.md`、`HOST_INJECTED_SETTINGS_ACTIVITY_GUIDE.md`）仅作背景，不再作为设计依据。
 
