@@ -119,6 +119,44 @@ object SettingsStore {
         SettingsModel.json.decodeFromString(SettingsModel.HostState.serializer(), file.readText())
     }.onFailure { Log.w(TAG, "readExternal failed: $host", it) }.getOrNull()
 
+    /**
+     * 写入**另一个宿主**的 `state.json`（导入配置时用）。
+     *
+     * 不同应用的外部私有目录在 Android 11+ 不可互写，因此先尝试直接落盘，
+     * 失败再用 `su` 复制过去；两者都失败返回 false，由 UI 提示。
+     */
+    fun writeExternal(context: Context, host: String, state: SettingsModel.HostState): Boolean {
+        val target = HostPaths.externalState(host)
+        val payload = state.copy(
+            schema = SettingsModel.SCHEMA_VERSION,
+            updatedAt = System.currentTimeMillis(),
+        )
+        val text = SettingsModel.json.encodeToString(SettingsModel.HostState.serializer(), payload)
+        return directWrite(target, text) || rootWrite(context, target, text)
+    }
+
+    private fun directWrite(target: File, text: String): Boolean = runCatching {
+        val dir = target.parentFile ?: return false
+        if (!dir.exists() && !dir.mkdirs()) return false
+        val tmp = File(dir, "$STATE_NAME.tmp")
+        tmp.writeText(text)
+        if (tmp.renameTo(target)) return true
+        tmp.delete()
+        false
+    }.getOrDefault(false)
+
+    /** 借 root 把临时文件复制到目标路径；用于跨应用目录写入。 */
+    private fun rootWrite(context: Context, target: File, text: String): Boolean = runCatching {
+        val staging = File(context.cacheDir, "import-state.json")
+        staging.writeText(text)
+        val cmd = "mkdir -p '${target.parent}' && cp '${staging.absolutePath}' '${target.absolutePath}' && echo OK"
+        val process = Runtime.getRuntime().exec(arrayOf("su", "-c", cmd))
+        val output = process.inputStream.bufferedReader().readText()
+        process.waitFor()
+        staging.delete()
+        output.contains("OK")
+    }.onFailure { Log.w(TAG, "rootWrite failed", it) }.getOrDefault(false)
+
     /** 重新从磁盘加载当前宿主快照（导出、切回本宿主时用）。 */
     fun reload(context: Context, host: String): SettingsModel.HostState {
         val loaded = readOrMigrate(context.applicationContext ?: context, host)

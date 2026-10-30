@@ -105,6 +105,11 @@
     <string name="toast_config_imported">Config imported</string>
     <string name="toast_read_file_failed">Failed to read file</string>
     <string name="error_import_format">Import failed: bad file format</string>
+    <string name="transfer_export_title">Export config</string>
+    <string name="transfer_import_title">Import config</string>
+    <string name="transfer_pick_host_export">Choose the host to export</string>
+    <string name="transfer_pick_host_import">Choose the host to import into</string>
+    <string name="toast_transfer_no_access">Cannot write to that host; grant root and retry</string>
     <string name="summary_export_config">Export this host\'s settings and waveform (JSON)</string>
     <string name="summary_import_config">Restore this host\'s settings from JSON</string>
 

@@ -1,6 +1,7 @@
 package com.haostoo.wetypehookr
 
 import android.app.Activity
+import androidx.activity.compose.BackHandler
 import android.os.Build
 import android.widget.Toast
 import androidx.annotation.StringRes
@@ -221,6 +222,13 @@ private fun SettingsScaffold(
         OverlayPage.Debug -> stringResource(R.string.title_debug_logs)
         OverlayPage.Help -> stringResource(R.string.title_help)
         null -> null
+    }
+
+    // 系统返回键：二级页只退出二级页，不结束整个 Activity。
+    BackHandler(enabled = overlay != null) {
+        overlay = null
+        editingDown = null
+        activeDraft = null
     }
 
     Scaffold(

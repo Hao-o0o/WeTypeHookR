@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">TypeVibrator</string>
-    <string name="module_description">为微信输入法 / 豆包输入法提供可自定义的双段触感反馈</string>
+    <string name="module_description">为某些输入法提供可自定义的双段触感反馈</string>
 
     <string name="action_back">返回</string>
     <string name="action_cancel">取消</string>
@@ -25,7 +25,7 @@
     <string name="host_name_iflytek">讯飞输入法</string>
     <string name="host_name_gboard">Gboard</string>
     <string name="host_picker_title">选择宿主</string>
-    <string name="host_no_access_hint">无法读取该宿主配置（不同应用的数据目录不可互访），当前仅供查看</string>
+    <string name="host_no_access_hint">无法读取该宿主配置（不同应用的数据目录不可互访），当前仅供查看（可能也没法查看）</string>
 
     <string name="title_injection">注入状态</string>
     <string name="injection_none">未观测到注入</string>
@@ -42,9 +42,9 @@
     <string name="label_down">按下</string>
     <string name="label_up">抬起</string>
     <string name="label_curve_preview">曲线预览</string>
-    <string name="curve_summary">强度 0~255 · 时间累计 %1$d ms（曲线为预览，实际按离散数值执行）</string>
+    <string name="curve_summary">强度 0~255 · 时间累计 %1$d ms（曲线仅供预览）</string>
     <string name="action_setup_waveform">设置波形</string>
-    <string name="waveform_not_set">未配置 · 将载入默认四段波形</string>
+    <string name="waveform_not_set">未配置 · 载入默认波形</string>
     <string name="waveform_set">已配置 · %1$d 段</string>
     <string name="duration_label">%1$s震动时长：%2$d ms</string>
     <string name="strength_label">%1$s震动强度：%2$d%%</string>
@@ -79,7 +79,7 @@
     <string name="waveform_down_desc">手指按下时的自定义波形；曲线为预览，实际按离散数值执行。</string>
     <string name="waveform_up_desc">手指抬起时的自定义波形；曲线为预览，实际按离散数值执行。</string>
     <string name="waveform_editor_summary">强度 0~255 · 时间累计 %1$d ms · 选中：波段 %2$d（时长 %3$dms，强度 %4$d）</string>
-    <string name="waveform_curve_a11y">波形曲线预览，点击节点可编辑对应波段；下方输入行同样可编辑</string>
+    <string name="waveform_curve_a11y">预览波形曲线，点击节点或通过下方输入行编辑波段震动数据</string>
 
     <string name="input_integer_required">请输入整数</string>
     <string name="input_range">范围 %1$d~%2$d</string>
@@ -105,6 +105,11 @@
     <string name="toast_config_imported">配置已导入</string>
     <string name="toast_read_file_failed">读取文件失败</string>
     <string name="error_import_format">导入失败：文件格式不正确</string>
+    <string name="transfer_export_title">导出配置</string>
+    <string name="transfer_import_title">导入配置</string>
+    <string name="transfer_pick_host_export">选择要导出的宿主</string>
+    <string name="transfer_pick_host_import">选择要导入到的宿主</string>
+    <string name="toast_transfer_no_access">无法写入该宿主，请授予 root 权限后重试</string>
     <string name="summary_export_config">导出当前宿主设置与波形（JSON）</string>
     <string name="summary_import_config">从 JSON 恢复当前宿主设置与波形</string>
 
@@ -122,9 +127,9 @@
     <string name="sponsor_qr_a11y">赞助二维码</string>
     <string name="toast_saved_to_gallery">已保存到相册：Pictures/WeDouVibrator</string>
     <string name="toast_save_failed">保存失败</string>
-    <string name="link_unavailable">链接待补充</string>
+    <string name="link_unavailable">链接加载失败</string>
     <string name="toast_open_link_failed">无法打开链接</string>
-    <string name="toast_open_settings_failed">无法在输入法内打开设置页，请反馈输入法版本</string>
+    <string name="toast_open_settings_failed">无法在输入法内打开设置页，请联系作者反馈</string>
 
     <string name="read_only_hint">当前为只读查看</string>
 
@@ -137,7 +142,7 @@
     <string name="title_framework_status">框架连接状态</string>
     <string name="status_connected">已连接</string>
     <string name="status_disconnected">未连接</string>
-    <string name="framework_unavailable_hint">暂时读不到框架信息，检查框架是否在运行后再试。</string>
+    <string name="framework_unavailable_hint">框架信息不可用，请检查框架状态。（免Root框架可忽略本提示）</string>
     <string name="title_version_info">版本信息</string>
     <string name="label_app_version">应用版本</string>
     <string name="label_framework_version">框架版本</string>
