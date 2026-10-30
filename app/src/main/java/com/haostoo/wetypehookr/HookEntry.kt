@@ -25,7 +25,7 @@ import com.highcapable.yukihookapi.hook.xposed.reload.lifecycle.registerModuleLi
  */
 @YukiHookLibXposedEntry(
     targetApiVersion = 102,
-    scope = [HostCatalog.WETYPE, HostCatalog.DOUBAO],
+    scope = [HostCatalog.WETYPE, HostCatalog.DOUBAO, HostCatalog.IFLYTEK, HostCatalog.GBOARD],
     staticScope = true,
     hotReload = YukiHookLibXposedEntry.HotReload.AUTO,
 )
@@ -52,30 +52,37 @@ object HookEntry : YukiHookXposedModule {
     }
 
     override fun onHook() = encase {
-        HostCatalog.ALL.forEach { host ->
-            loadApp(host) {
-                HookRuntime.markLoaded(host)
-                // 框架名 / 版本 / API 版本由 YukiHook 的运行时桥接读取，取不到时保持 unknown。
-                runCatching {
-                    HookRuntime.markFramework(
-                        name = YukiHook.Status.Executor.name,
-                        version = YukiHook.Status.Executor.version,
-                        apiVersion = YukiHook.Status.Executor.apiVersion,
-                    )
-                }
-
-                // 崩溃留证：宿主进程里模块导致的未捕获异常写进 diag.log（logcat 会轮转丢失）。
-                hostApplication?.let { HostDiag.installCrashHandler(it) }
-
-                installTouchHooks()
-                hostApplication?.let { SettingsStore.attach(it, host) }
-
-                withApplicationReady { app ->
-                    registerActivities(app, host)
-                }
-
-                installFabHook()
+        // 不再枚举精确包名：讯飞等宿主存在 `com.iflytek.inputmethod.*` 定制版，
+        // 运行期按「家族前缀」判断，命中即装配，未命中的进程直接退出。
+        val host = packageName
+        if (!HostCatalog.isSupported(host)) {
+            Log.i(TAG, "skip unsupported host: $host")
+            return@encase
+        }
+        loadApp(host) {
+            HookRuntime.markLoaded(host)
+            // 框架名 / 版本 / API 版本由 YukiHook 的运行时桥接读取，取不到时保持 unknown。
+            runCatching {
+                HookRuntime.markFramework(
+                    name = YukiHook.Status.Executor.name,
+                    version = YukiHook.Status.Executor.version,
+                    apiVersion = YukiHook.Status.Executor.apiVersion,
+                )
             }
+
+            installTouchHooks()
+
+            // 需要 Context 的一切都必须放进 withApplicationReady：
+            // `onHook` 在 Application 创建之前跑，此时 `hostApplication` 是 null，
+            // 直接 `hostApplication?.let { … }` 会在冷启动时被静默跳过 —— 配置就读不到了。
+            withApplicationReady { app ->
+                // 崩溃留证：宿主进程里模块导致的未捕获异常写进 diag.log（logcat 会轮转丢失）。
+                HostDiag.installCrashHandler(app)
+                SettingsStore.attach(app, host)
+                registerActivities(app, host)
+            }
+
+            installFabHook()
         }
     }
 

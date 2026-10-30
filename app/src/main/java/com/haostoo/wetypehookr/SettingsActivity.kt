@@ -31,6 +31,10 @@ class SettingsActivity : BaseHostActivity() {
         Log.i(TAG, "SettingsActivity onCreate host=$packageName pid=${Process.myPid()}")
         HostDiag.log(this, "UI", "onCreate host=$packageName pid=${Process.myPid()}")
 
+        // 兜底：正常路径下 HookEntry 已在 withApplicationReady 里 attach 过，
+        // 这里幂等（同一 host 直接返回），只防「页面起来了但配置没加载」。
+        runCatching { SettingsStore.attach(this, packageName) }
+
         setContent {
             SettingsApp()
         }

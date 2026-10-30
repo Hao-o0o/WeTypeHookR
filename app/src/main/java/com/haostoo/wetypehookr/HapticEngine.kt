@@ -92,6 +92,7 @@ object HapticEngine {
                             duration.toLong(),
                             (strength * 255).toInt().coerceIn(1, 255),
                         ),
+                        hapticAttributes(),
                     )
                 } else {
                     @Suppress("DEPRECATION")
@@ -110,12 +111,27 @@ object HapticEngine {
                                 it.amplitudes.toIntArray(),
                                 -1,
                             ),
+                            hapticAttributes(),
                         )
                     }
                 }
             }
         }
     }
+
+    /**
+     * 自定义震动的用途声明。
+     *
+     * 必须显式给一个非 0 的 usage：系统 `VibratorManagerService.fixupVibrationAttributes()`
+     * 会把 `usage == 0` 且「可作为触摸反馈」的效果改写成 `USAGE_TOUCH`，随后走触摸反馈的
+     * 立体渲染通道，长效果会被渲染成空内容（dumpsys 显示 `played: Stereo{...: null}`），
+     * 马达不驱动 —— 表现为「自定义震动被压成一下弱震」。`USAGE_PHYSICAL_EMULATION`
+     * 语义即自定义触感，强度档位为 HIGH，且不参与触摸反馈的改写。
+     */
+    private fun hapticAttributes(): android.os.VibrationAttributes =
+        android.os.VibrationAttributes.createForUsage(
+            android.os.VibrationAttributes.USAGE_PHYSICAL_EMULATION,
+        )
 
     /** 重载输入法的结果；文案在 UI 层由资源解析。 */
     enum class ReloadResult { OK, NO_ROOT, NO_SU, FAILED }

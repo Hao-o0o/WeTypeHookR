@@ -22,6 +22,8 @@
     <string name="host_version">Version %1$s</string>
     <string name="host_name_wetype">WeType</string>
     <string name="host_name_doubao">Doubao IME</string>
+    <string name="host_name_iflytek">iFlytek Keyboard</string>
+    <string name="host_name_gboard">Gboard</string>
     <string name="host_picker_title">Choose host</string>
     <string name="host_no_access_hint">Cannot read that host\'s config (separate app data)</string>
 

@@ -7,6 +7,8 @@
     <queries>
         <package android:name="com.tencent.wetype" />
         <package android:name="com.bytedance.android.doubaoime" />
+        <package android:name="com.iflytek.inputmethod" />
+        <package android:name="com.google.android.inputmethod.latin" />
     </queries>
 
     <!-- 模块没有 launcher Activity：设置页由输入法进程内的寄生 Activity 承载，

@@ -11,6 +11,8 @@
 | --- | --- | --- | --- |
 | `com.tencent.wetype` | `com.tencent.wetype.plugin.hld.reactnative.activity.ImeMainSettingActivity` | 待验证 | 可打开（2026-10-30 实测） |
 | `com.bytedance.android.doubaoime` | `com.bytedance.android.doubaoime.activity.LauncherActivity` | 待验证 | 可打开（2026-10-30 实测） |
+| `com.iflytek.inputmethod` | `com.iflytek.inputmethod.LauncherSettingsActivity` | 待验证（未声明 → standard） | 新增，待真机验证 |
+| `com.google.android.inputmethod.latin` | `com.google.android.libraries.inputmethod.launcher.LauncherActivity` | 待验证（未声明 → standard） | 新增，待真机验证 |
 
 豆包为什么不用 `SettingsActivityNext`（实测踩过的坑）：
 
@@ -57,8 +59,19 @@ adb logcat -c && adb logcat -s WETYPE_FAB WETYPE_HOOK WETYPE_UI
 | --- | --- | --- | --- |
 | `com.tencent.wetype` | `com.tencent.wetype.plugin.hld.view.ImeRootView` | `dispatchTouchEvent` | 沿用，2026-10-30 实测有震动 |
 | `com.bytedance.android.doubaoime` | `com.bytedance.android.input.keyboard.KeyboardView` | `onTouchEvent` | 沿用，2026-10-30 实测有震动 |
+| `com.iflytek.inputmethod` | `com.iflytek.inputmethod.keyboard.normal.InputView` | `dispatchTouchEvent` | 新增，待真机验证 |
+| `com.google.android.inputmethod.latin` | `com.google.android.libraries.inputmethod.inputview.InputView` | `dispatchTouchEvent` | 新增，待真机验证 |
 
 日志验证：`adb logcat -s WETYPE_HOOK` 应出现 `hook installed: <类>#<方法>@<宿主>`。
+
+## 2.1 新宿主的进程与作用域
+
+| 宿主 | 键盘进程 | 设置页进程 | 备注 |
+| --- | --- | --- | --- |
+| 讯飞 | `com.iflytek.inputmethod` | `com.iflytek.inputmethod.settings` | 设置页 `FlyImeSettingsActivity` 是 `launchMode=3`(singleInstance)，只能当 FAB 注入点、不能当 proxy |
+| Gboard | `com.google.android.inputmethod.latin` | 同主进程 | 设置页与键盘类不在同一父包（`apps.inputmethod` vs `libraries.inputmethod`），类名兜底需两个前缀 |
+
+讯飞定制版（`.oem` / `.miui`）不在静态 `scope` 里，需用户在 LSPosed 手动勾选；勾选后 `isSupported` 的前缀匹配生效。
 
 ## 3. 已知差异
 
