@@ -18,9 +18,6 @@
     <string name="action_probe_raw">裸调用（当前实现）</string>
     <string name="action_probe_touch">USAGE_TOUCH</string>
     <string name="action_probe_hardware">USAGE_HARDWARE_FEEDBACK</string>
-    <string name="action_probe_appctx">应用上下文 Vibrator</string>
-    <string name="action_probe_vm">VibratorManager 默认振动器</string>
-    <string name="action_probe_waveform">波形 800ms</string>
     <string name="action_probe_haptic">performHapticFeedback</string>
     <string name="action_export_logs">导出日志</string>
     <string name="action_clear_logs">清除日志</string>
