@@ -12,3 +12,6 @@ release.jks
 # 本地临时产物 / 调试截图
 .dsh_*
 local.properties
+
+# 反编译用临时目录（APK 体积大，不入库）
+reverse/
