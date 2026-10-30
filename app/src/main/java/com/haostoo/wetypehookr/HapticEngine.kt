@@ -87,41 +87,162 @@ object HapticEngine {
                 view.performHapticFeedback(hapticConstantForIndex(systemIndex))
             }
             2 -> {
-                if (!vibrator.hasVibrator()) return
-                if (android.os.Build.VERSION.SDK_INT >= 26) {
-                    VibratorProbe.trace {
-                        vibrator.vibrate(
+                if (vibrator?.hasVibrator() != true) return
+                val clicks = ((duration + PRIMITIVE_MS - 1) / PRIMITIVE_MS).toInt().coerceIn(1, MAX_PRIMITIVES)
+                emit(
+                    context = context,
+                    vibrator = vibrator,
+                    primitive = clickEffect(vibrator, clicks, strength),
+                    fallback = {
+                        if (android.os.Build.VERSION.SDK_INT >= 26) {
                             android.os.VibrationEffect.createOneShot(
                                 duration.toLong(),
                                 (strength * 255).toInt().coerceIn(1, 255),
-                            ),
-                        )
-                    }
-                } else {
-                    @Suppress("DEPRECATION")
-                    VibratorProbe.trace { vibrator.vibrate(duration.toLong()) }
-                }
+                            )
+                        } else {
+                            null
+                        }
+                    },
+                    label = "custom dur=${duration.toInt()} str$strength clicks=$clicks",
+                )
             }
             3 -> {
-                if (!vibrator.hasVibrator()) return
-                if (android.os.Build.VERSION.SDK_INT >= 26) {
-                    val w = waveform
-                        ?: if (isDown) cachedCustomHaptic?.down else cachedCustomHaptic?.up
-                    w?.let {
-                        VibratorProbe.trace {
-                            vibrator.vibrate(
-                                android.os.VibrationEffect.createWaveform(
-                                    it.timings.toLongArray(),
-                                    it.amplitudes.toIntArray(),
-                                    -1,
-                                ),
+                if (vibrator?.hasVibrator() != true) return
+                val w = waveform
+                    ?: if (isDown) cachedCustomHaptic?.down else cachedCustomHaptic?.up
+                if (w == null) return
+                emit(
+                    context = context,
+                    vibrator = vibrator,
+                    primitive = waveformClickEffect(vibrator, w),
+                    fallback = {
+                        if (android.os.Build.VERSION.SDK_INT >= 26) {
+                            android.os.VibrationEffect.createWaveform(
+                                w.timings.toLongArray(),
+                                w.amplitudes.toIntArray(),
+                                -1,
                             )
+                        } else {
+                            null
                         }
-                    }
-                }
+                    },
+                    label = "wave timings=${w.timings} amps=${w.amplitudes}",
+                )
             }
         }
     }
+
+    /**
+     * 发出一次震动。
+     *
+     * 为什么优先用**原始触感（primitive）组合**而不是 `createOneShot/createWaveform`：
+     * 这两条老 API 在部分机型（尤其窄频 LRA）上会被 HAL 以降幅很低的「Step」渲染，
+     * 而系统自带的按键反馈用的是 prebaked/primitive，响度和手感都由厂商调过。
+     * 把自定义时长/强度映射成一串 CLICK，等于借用系统自己那条「手感正常」的通道。
+     *
+     * - 设备不支持 primitive 时退回老 API（[fallback]，行为与旧版一致）；
+     * - 一律带 `USAGE_TOUCH`，与系统按键反馈同一用途，避免落到会被降权的 UNKNOWN 档；
+     * - 每次只写前 [DIAG_LIMIT] 条诊断，避免刷屏。
+     */
+    private fun emit(
+        context: Context,
+        vibrator: android.os.Vibrator,
+        primitive: android.os.VibrationEffect?,
+        fallback: () -> android.os.VibrationEffect?,
+        label: String,
+    ) {
+        val effect = primitive ?: fallback()
+        if (effect == null) return
+        var failure: Throwable? = null
+        try {
+            VibratorProbe.trace {
+                vibrator.vibrate(
+                    effect,
+                    android.os.VibrationAttributes.createForUsage(
+                        android.os.VibrationAttributes.USAGE_TOUCH,
+                    ),
+                )
+            }
+        } catch (t: Throwable) {
+            failure = t
+        }
+        val index = emitCount.incrementAndGet()
+        if (index <= DIAG_LIMIT) {
+            val kind = if (primitive != null) "primitive" else "legacy"
+            HostDiag.log(
+                context,
+                "VIB",
+                "emit#$index $kind $label ${if (failure == null) "ok" else "ERR=${failure.javaClass.name}: ${failure.message}"}",
+            )
+        }
+    }
+
+    /** 把一段时长映射成 n 个 CLICK，连续播放即得到一段稳定的持续震动。 */
+    private fun clickEffect(
+        vibrator: android.os.Vibrator,
+        count: Int,
+        scale: Float,
+    ): android.os.VibrationEffect? = runCatching {
+        if (!supportsPrimitives(vibrator)) return null
+        val composition = android.os.VibrationEffect.startComposition()
+        repeat(count.coerceIn(1, MAX_PRIMITIVES)) {
+            composition.addPrimitive(
+                android.os.VibrationEffect.Composition.PRIMITIVE_CLICK,
+                scale.coerceIn(MIN_SCALE, 1f),
+            )
+        }
+        composition.compose()
+    }.getOrNull()
+
+    /** 自定义波形：每段的时长决定 CLICK 个数，强度决定 CLICK 的 scale。 */
+    private fun waveformClickEffect(
+        vibrator: android.os.Vibrator,
+        wave: SettingsModel.WaveformHaptic,
+    ): android.os.VibrationEffect? = runCatching {
+        if (!supportsPrimitives(vibrator)) return null
+        val composition = android.os.VibrationEffect.startComposition()
+        var added = 0
+        wave.timings.forEachIndexed { index, timing ->
+            val amplitude = wave.amplitudes.getOrElse(index) { 0 }
+            // 首段固定为 0，强度 0 表示静音，两者都跳过（CLICK 无法表达「静音」）。
+            if (index > 0 && timing > 0 && amplitude > 0 && added < MAX_PRIMITIVES) {
+                val clicks = ((timing + PRIMITIVE_MS - 1) / PRIMITIVE_MS).toInt().coerceAtLeast(1)
+                repeat(clicks.coerceAtMost(MAX_PRIMITIVES - added)) {
+                    composition.addPrimitive(
+                        android.os.VibrationEffect.Composition.PRIMITIVE_CLICK,
+                        (amplitude / 255f).coerceIn(MIN_SCALE, 1f),
+                    )
+                    added++
+                }
+            }
+        }
+        if (added == 0) return null
+        composition.compose()
+    }.getOrNull()
+
+    /** 设备是否支持 primitive 触感；只探测一次。 */
+    @Volatile
+    private var primitiveSupport: Boolean? = null
+
+    private fun supportsPrimitives(vibrator: android.os.Vibrator): Boolean {
+        primitiveSupport?.let { return it }
+        val supported: Boolean = try {
+            vibrator.areAllPrimitivesSupported(
+                android.os.VibrationEffect.Composition.PRIMITIVE_CLICK,
+            )
+        } catch (t: Throwable) {
+            false
+        }
+        primitiveSupport = supported
+        return supported
+    }
+
+    private const val PRIMITIVE_MS = 20L
+    private const val MAX_PRIMITIVES = 120
+    private const val MIN_SCALE = 0.05f
+    private const val DIAG_LIMIT = 24
+
+    private val emitCount = java.util.concurrent.atomic.AtomicInteger()
 
     /** 重载输入法的结果；文案在 UI 层由资源解析。 */
     enum class ReloadResult { OK, NO_ROOT, NO_SU, FAILED }

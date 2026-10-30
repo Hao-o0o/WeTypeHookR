@@ -405,6 +405,21 @@ fun DebugPage(
                 summary = "performHapticFeedback(KEYBOARD_TAP)",
                 onClick = { VibratorProbe.play(probeView, VibratorProbe.Variant.HAPTIC) },
             )
+            ArrowPreference(
+                title = stringResource(R.string.action_probe_appctx),
+                summary = "applicationContext 的 Vibrator + oneShot(800)",
+                onClick = { VibratorProbe.play(probeView, VibratorProbe.Variant.APPCTX) },
+            )
+            ArrowPreference(
+                title = stringResource(R.string.action_probe_vm),
+                summary = "VibratorManager.defaultVibrator + oneShot(800)",
+                onClick = { VibratorProbe.play(probeView, VibratorProbe.Variant.VM) },
+            )
+            ArrowPreference(
+                title = stringResource(R.string.action_probe_waveform),
+                summary = "createWaveform([0, 800], [0, 255]) + USAGE_TOUCH",
+                onClick = { VibratorProbe.play(probeView, VibratorProbe.Variant.WAVEFORM) },
+            )
         }
         Spacer(Modifier.height(CardGap))
         Spacer(Modifier.height(insets.calculateBottomPadding()))

@@ -62,10 +62,73 @@ object VibratorProbe {
             HostDiag.log(
                 context,
                 "VIB",
-                "probe installed hooks=$hooks impl=${vibrator.javaClass.name} " +
-                    "amp=${vibrator.hasAmplitudeControl()}",
+                "probe installed hooks=$hooks ${describeVibrator(context, vibrator)}",
             )
+            installServiceProxyProbe(context)
         }.onFailure { HostDiag.log(context, "VIB", "probe install failed: $it") }
+    }
+
+    /** 把 Vibrator 实例的内部字段摊开：uid / 包名 / 是否真的有服务端 binder。 */
+    private fun describeVibrator(context: Context, vibrator: Vibrator): String = buildString {
+        append("impl=${vibrator.javaClass.name}")
+        append(" id=")
+        runCatching { append(vibrator.id) }.onFailure { append("?") }
+        append(" has=")
+        runCatching { append(vibrator.hasVibrator()) }.onFailure { append("?") }
+        append(" amp=")
+        runCatching { append(vibrator.hasAmplitudeControl()) }.onFailure { append("?") }
+        append(" myUid=").append(android.os.Process.myUid())
+        append(" pkg=").append(context.packageName)
+        var type: Class<*>? = vibrator.javaClass
+        while (type != null && type != Any::class.java) {
+            type.declaredFields.forEach { field ->
+                runCatching {
+                    field.isAccessible = true
+                    val value = field.get(vibrator)
+                    append(" ").append(field.name).append("=")
+                    append(
+                        when (value) {
+                            null -> "null"
+                            is String, is Number, is Boolean -> value.toString()
+                            else -> value.javaClass.name
+                        },
+                    )
+                }
+            }
+            type = type.superclass
+        }
+    }
+
+    /**
+     * 服务端 binder 代理的探针。
+     *
+     * `SystemVibrator` 内部把 `RemoteException` / `RuntimeException` 吞掉只写一条日志，
+     * 这里在代理上取 throwable，能直接看到服务端是否拒绝（SecurityException 等）。
+     */
+    private fun PackageParam.installServiceProxyProbe(context: Context) {
+        runCatching {
+            val proxy = Class.forName("android.os.IVibratorService\$Stub\$Proxy")
+            var count = 0
+            proxy.declaredMethods
+                .filter { it.name.startsWith("vibrate") || it.name == "cancelVibrate" }
+                .forEach { method ->
+                    runCatching {
+                        method.hook {
+                            after {
+                                if (!own.get() && System.currentTimeMillis() > ownUntil) return@after
+                                val failure = throwable
+                                HostDiag.log(
+                                    context,
+                                    "VIB",
+                                    "  proxy ${method.name} throwable=${failure ?: "none"}",
+                                )
+                            }
+                        }
+                        count++
+                    }
+                }
+            HostDiag.log(context, "VIB", "proxy probe hooks=$count")
+        }.onFailure { HostDiag.log(context, "VIB", "proxy probe failed: $it") }
     }
 
     private fun PackageParam.hook(context: Context, method: Method): Boolean = runCatching {
@@ -87,6 +150,12 @@ object VibratorProbe {
                     buildString {
                         append(if (isOwn) "own " else "other ")
                         append("${method.name}(${argList.joinToString(",") { it?.javaClass?.simpleName ?: "null" }})")
+                        // 关键：直接 vibrate 的 overload 会带上 uid / packageName，
+                        // 服务端若认为「uid 与包名不匹配」会抛 SecurityException 并静默丢弃。
+                        argList.filterIsInstance<Int>().firstOrNull()?.let { append(" uid=$it") }
+                        argList.filterIsInstance<String>().let { strings ->
+                            if (strings.isNotEmpty()) append(" pkg=${strings.joinToString("/")}")
+                        }
                         if (effect != null) append(" effect=${describe(effect)}")
                         if (longArgs != null) append(" raw=$longArgs")
                         append(" attr=${attributes?.toString() ?: "none"}")
@@ -99,12 +168,17 @@ object VibratorProbe {
     }.getOrDefault(false)
 
     /** 设置页三种写法连测。 */
-    enum class Variant { RAW, TOUCH, HARDWARE, HAPTIC }
+    enum class Variant { RAW, TOUCH, HARDWARE, HAPTIC, WAVEFORM, APPCTX, VM }
 
-    fun play(view: View, variant: Variant, durationMs: Long = 200L, amplitude: Int = 255) {
+    fun play(view: View, variant: Variant, durationMs: Long = 800L, amplitude: Int = 255) {
         val context = view.context
         val vibrator = context.getSystemService(Vibrator::class.java)
-        HostDiag.log(context, "VIB", "play ${variant.name} duration=$durationMs amp=$amplitude")
+        // epoch 毫秒用于和 dumpsys vibrator_manager 的 start 时间对齐
+        HostDiag.log(
+            context,
+            "VIB",
+            "play ${variant.name} t=${System.currentTimeMillis()} duration=$durationMs amp=$amplitude",
+        )
         trace {
             runCatching {
                 when (variant) {
@@ -118,6 +192,20 @@ object VibratorProbe {
                         VibrationAttributes.createForUsage(VibrationAttributes.USAGE_HARDWARE_FEEDBACK),
                     )
                     Variant.HAPTIC -> view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                    Variant.APPCTX -> context.applicationContext
+                        .getSystemService(Vibrator::class.java)
+                        ?.vibrate(VibrationEffect.createOneShot(durationMs, amplitude))
+                    Variant.VM -> context.getSystemService(android.os.VibratorManager::class.java)
+                        ?.defaultVibrator
+                        ?.vibrate(VibrationEffect.createOneShot(durationMs, amplitude))
+                    Variant.WAVEFORM -> vibrator?.vibrate(
+                        VibrationEffect.createWaveform(
+                            longArrayOf(0, durationMs),
+                            intArrayOf(0, amplitude),
+                            -1,
+                        ),
+                        VibrationAttributes.createForUsage(VibrationAttributes.USAGE_TOUCH),
+                    )
                 }
             }.onFailure { HostDiag.log(context, "VIB", "play ${variant.name} failed: $it") }
         }
@@ -135,7 +223,10 @@ object VibratorProbe {
         when {
             timings != null -> "waveform(timings=${Arrays.toString(timings)} amps=${Arrays.toString(amplitudes)})"
             duration != null -> "oneShot(duration=$duration amp=$amplitude)"
-            else -> effect.javaClass.simpleName
+            else -> {
+                val segments = readField(effect, "mSegments")?.let { (it as? Array<*>)?.size }
+                "${effect.javaClass.simpleName}(segments=$segments)"
+            }
         }
     }.getOrElse { effect.javaClass.simpleName }
 

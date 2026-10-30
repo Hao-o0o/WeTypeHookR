@@ -18,6 +18,9 @@
     <string name="action_probe_raw">Raw vibrate (current)</string>
     <string name="action_probe_touch">USAGE_TOUCH</string>
     <string name="action_probe_hardware">USAGE_HARDWARE_FEEDBACK</string>
+    <string name="action_probe_appctx">App-context Vibrator</string>
+    <string name="action_probe_vm">VibratorManager default</string>
+    <string name="action_probe_waveform">Waveform 800ms</string>
     <string name="action_probe_haptic">performHapticFeedback</string>
     <string name="action_export_logs">Export logs</string>
     <string name="action_clear_logs">Clear logs</string>
